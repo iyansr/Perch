@@ -49,11 +49,11 @@ extension NotchModel {
             if choosing {
                 return ShapeMetrics(
                     size: CGSize(width: NotchGeometry.panelWidth, height: Self.searchRowHeight),
-                    top: geometry.islandTop + 8, topRadius: Self.searchRowHeight / 2, bottomRadius: Self.searchRowHeight / 2
+                    top: 8, topRadius: Self.searchRowHeight / 2, bottomRadius: Self.searchRowHeight / 2
                 )
             }
             let size = CGSize(width: Self.dropTargetWidth + swell, height: 56 + swell / 2)
-            return ShapeMetrics(size: size, top: geometry.islandTop + 6, topRadius: size.height / 2, bottomRadius: size.height / 2)
+            return ShapeMetrics(size: size, top: 6, topRadius: size.height / 2, bottomRadius: size.height / 2)
         }
     }
 }

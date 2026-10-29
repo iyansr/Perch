@@ -71,7 +71,7 @@ final class AppIndex {
     var onUpdate: (() -> Void)?
 
     private var lastScan: Date = .distantPast
-    private var isScanning = false
+    private(set) var isScanning = false
 
     func refreshIfStale() {
         guard !isScanning, Date().timeIntervalSince(lastScan) > Self.staleAfter else { return }

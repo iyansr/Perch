@@ -66,6 +66,18 @@ enum SearchResult: Identifiable, Equatable {
         case .clip(let item): item.kindLabel
         }
     }
+
+    /// What ↵ does, shown inline after the query ("tide pools — Open").
+    var actionTitle: String {
+        switch self {
+        case .app, .file: "Open"
+        case .answer: "Copy"
+        case .timer: "Start Timer"
+        case .web: "Search Web"
+        case .ask: "Ask AI"
+        case .clip: "Paste"
+        }
+    }
 }
 
 final class SearchEngine {
@@ -83,6 +95,11 @@ final class SearchEngine {
     }
 
     var hasRecents: Bool { !recentApps.isEmpty }
+
+    /// Work the user is waiting on: a Spotlight file query, or the first app scan (later rescans keep old results).
+    var isBusy: Bool {
+        files.isSearching || (index.isScanning && index.apps.isEmpty)
+    }
 
     func results(for rawQuery: String, scope: SearchScope) -> [SearchResult] {
         let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)

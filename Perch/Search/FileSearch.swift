@@ -7,6 +7,8 @@ final class FileSearch {
     static let debounce: Duration = .milliseconds(120)
 
     private(set) var results: [URL] = []
+    /// True from the first keystroke of a non-empty query until its results land or it is cancelled.
+    private(set) var isSearching = false
     var onUpdate: (() -> Void)?
 
     private var query: NSMetadataQuery?
@@ -25,6 +27,7 @@ final class FileSearch {
         debounceTask?.cancel()
         stop()
         results = []
+        isSearching = !text.isEmpty
         guard !text.isEmpty else { return }
 
         debounceTask = Task { [weak self] in
@@ -38,6 +41,7 @@ final class FileSearch {
         debounceTask?.cancel()
         stop()
         currentText = ""
+        isSearching = false
         results = []
     }
 
@@ -79,6 +83,7 @@ final class FileSearch {
             .prefix(Self.maxResults)
             .map(\.url)
         stop()
+        isSearching = false
         onUpdate?()
     }
 }

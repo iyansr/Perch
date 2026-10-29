@@ -75,7 +75,7 @@ struct CommandPanelView: View {
                         ForEach(Array(model.results.enumerated()), id: \.element.id) { index, result in
                             ResultRow(
                                 result: result,
-                                icon: icon(for: result),
+                                icon: model.icon(for: result),
                                 isSelected: index == model.selection
                             )
                             .id(result.id)
@@ -141,11 +141,13 @@ struct CommandPanelView: View {
         let count = CGFloat(model.results.count)
         return min(Self.maxListHeight, count * Self.rowHeight + max(0, count - 1) * Self.rowSpacing)
     }
+}
 
-    private func icon(for result: SearchResult) -> NSImage? {
+extension NotchModel {
+    func icon(for result: SearchResult) -> NSImage? {
         switch result {
-        case let .app(app): model.search.icon(for: app)
-        case let .file(url): model.search.fileIcon(for: url)
+        case let .app(app): search.icon(for: app)
+        case let .file(url): search.fileIcon(for: url)
         default: nil
         }
     }
@@ -178,20 +180,30 @@ private struct ResultRow: View {
         .contentShape(Rectangle())
     }
 
-    @ViewBuilder
     private var tile: some View {
+        ResultIcon(result: result, icon: icon, size: 20)
+    }
+}
+
+/// App/file icon when there is one, otherwise a coloured tile with a symbol for the result kind.
+struct ResultIcon: View {
+    let result: SearchResult
+    let icon: NSImage?
+    let size: CGFloat
+
+    var body: some View {
         if let icon {
             Image(nsImage: icon)
                 .resizable()
-                .frame(width: 20, height: 20)
+                .frame(width: size, height: size)
         } else {
             let style = tileStyle
-            RoundedRectangle(cornerRadius: 5, style: .continuous)
+            RoundedRectangle(cornerRadius: size / 4, style: .continuous)
                 .fill(style.color)
-                .frame(width: 20, height: 20)
+                .frame(width: size, height: size)
                 .overlay {
                     Image(systemName: style.symbol)
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.system(size: size / 2, weight: .bold))
                         .foregroundStyle(.white)
                 }
         }
@@ -233,13 +245,17 @@ private struct RowEntrance: ViewModifier {
 
 /// Behind-window blur that stays active even though Perch never becomes the active app.
 struct VisualEffectBackground: NSViewRepresentable {
+    var material: NSVisualEffectView.Material = .popover
+
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
-        view.material = .popover
+        view.material = material
         view.blendingMode = .behindWindow
         view.state = .active
         return view
     }
 
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
+        nsView.material = material
+    }
 }

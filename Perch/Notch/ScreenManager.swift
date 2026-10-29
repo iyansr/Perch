@@ -12,10 +12,10 @@ enum ScreenStyle: Equatable {
 /// centred on the notch; everything else is laid out inside it.
 struct NotchGeometry: Equatable {
     static let windowSize = CGSize(width: 760, height: 620)
-    /// iPhone Dynamic Island, idle (126 × 37.33 pt).
-    static let islandSize = CGSize(width: 126, height: 37)
+    /// Idle island: a 2:1 pill, the same height as the compact activity pill.
+    static let islandSize = CGSize(width: 56, height: 28)
     /// iPhone Dynamic Island, compact with a live activity on both sides of the camera.
-    static let islandCompactSize = CGSize(width: 250, height: 37)
+    static let islandCompactSize = CGSize(width: 250, height: 28)
     static let panelWidth: CGFloat = 480
     /// Clipboard scope: list and detail side by side.
     static let clipboardPanelWidth: CGFloat = 680
@@ -31,8 +31,6 @@ struct NotchGeometry: Equatable {
     var notchSize: CGSize
     /// Horizontal centre of the notch in screen coordinates.
     var centerX: CGFloat
-    /// Distance from the top edge the island hangs from: 0 in the menu bar, the bar's height below it.
-    var islandTop: CGFloat = 0
 
     var windowFrame: CGRect {
         CGRect(
@@ -187,23 +185,15 @@ final class ScreenManager {
                 centerX: frame.minX + left.width + width / 2
             )
         }
-        switch extras {
-        case .readable(let edge):
-            return NotchGeometry(
-                style: .island,
-                screenFrame: frame,
-                notchSize: NotchGeometry.islandSize,
-                centerX: NotchGeometry.islandCenterX(screenFrame: frame, extrasEdge: edge)
-            )
-        case .unreadable:
-            // Without Accessibility the extras could be anywhere, so the island hangs below the menu bar instead.
-            return NotchGeometry(
-                style: .island,
-                screenFrame: frame,
-                notchSize: NotchGeometry.islandSize,
-                centerX: frame.midX,
-                islandTop: menuBarHeight(of: screen)
-            )
-        }
+        // Island style keeps the Dynamic Island look: always at the top edge. Without Accessibility the extras
+        // edge is unknown, so it stays centred.
+        var edge: CGFloat?
+        if case .readable(let readable) = extras { edge = readable }
+        return NotchGeometry(
+            style: .island,
+            screenFrame: frame,
+            notchSize: NotchGeometry.islandSize,
+            centerX: NotchGeometry.islandCenterX(screenFrame: frame, extrasEdge: edge)
+        )
     }
 }

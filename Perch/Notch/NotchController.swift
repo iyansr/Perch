@@ -417,14 +417,15 @@ final class NotchController {
         case kVK_Escape:
             close()
             return nil
-        case kVK_DownArrow:
+        case kVK_DownArrow where model.showsResults:
             model.moveSelection(by: 1)
             return nil
-        case kVK_UpArrow:
+        case kVK_UpArrow where model.showsResults:
             model.moveSelection(by: -1)
             return nil
         case kVK_Return, kVK_ANSI_KeypadEnter:
-            if let result = model.selectedResult {
+            // Nothing to run until the results panel is on screen.
+            if model.showsResults, let result = model.selectedResult {
                 if modifiers == .command, case let .file(url) = result {
                     close(restoreFocus: false)
                     NSWorkspace.shared.activateFileViewerSelecting([url])
@@ -451,7 +452,8 @@ final class NotchController {
     }
 
     /// Mouse passes through the transparent panel except over the surface itself.
-    private func updateHover() {
+    /// Also called by the view when the open layout changes under a still cursor (results panel appearing, resizing).
+    func updateHover() {
         let inside = isMouseInside
         // Even while open, clicks outside the surface fall through to the app underneath;
         // the global monitor then closes the panel and the click still lands where the user aimed.
