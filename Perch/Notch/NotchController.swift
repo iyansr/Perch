@@ -219,12 +219,11 @@ final class NotchController {
             NSApp.yieldActivation(to: app)
             app.activate()
         }
-        // Fallback if the panel is still key once the morph is done: re-ordering the
-        // idle pill releases key status and is not visible at that point.
+        // Fallback if the panel is still key once the morph is done, e.g. the previous
+        // app was already frontmost (a drop from Finder), so activating it changed nothing.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) { [weak self] in
-            guard let self, model.state == .idle || model.state == .glance, panel.isKeyWindow else { return }
-            panel.orderOut(nil)
-            panel.orderFrontRegardless()
+            guard let self, model.state == .idle || model.state == .glance else { return }
+            panel.releaseKey()
         }
     }
 
@@ -363,9 +362,8 @@ final class NotchController {
 
     /// A non-activating panel can stay key after `close()`; the synthetic ⌘V would then land in Perch's own search field.
     private func releaseKeyStatus() {
-        guard model.state != .open, panel.isKeyWindow else { return }
-        panel.orderOut(nil)
-        panel.orderFrontRegardless()
+        guard model.state != .open else { return }
+        panel.releaseKey()
     }
 
     /// Short message in the collapsed pill; 2 s on screen after the 0.6 s collapse morph.

@@ -26,11 +26,44 @@ final class NotchPanel: NSPanel {
         ignoresMouseEvents = true
     }
 
-    override var canBecomeKey: Bool { true }
+    override var canBecomeKey: Bool { allowsKey }
     override var canBecomeMain: Bool { false }
+
+    private var allowsKey = true
+    private lazy var keySink = KeySinkPanel()
+
+    /// Drops key status without leaving the screen. Re-activating an app that is already
+    /// frontmost does not take the key back from a non-activating panel, and ordering this
+    /// panel out to force it would blink the visible pill.
+    func releaseKey() {
+        guard isKeyWindow else { return }
+        allowsKey = false // AppKit must not hand the key straight back to this panel
+        keySink.makeKeyAndOrderFront(nil)
+        keySink.orderOut(nil)
+        allowsKey = true
+    }
 
     /// Borderless windows must be allowed to overlap the menu bar.
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
+}
+
+/// Invisible, off-screen window that briefly takes the key so `NotchPanel` can drop it.
+private final class KeySinkPanel: NSPanel {
+    init() {
+        super.init(
+            contentRect: NSRect(x: -10_000, y: -10_000, width: 1, height: 1),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: true
+        )
+        alphaValue = 0
+        ignoresMouseEvents = true
+        hidesOnDeactivate = false
+        isReleasedWhenClosed = false
+    }
+
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
 }
 
 /// Lets the first click on the (never active) panel reach SwiftUI instead of only focusing the window.
