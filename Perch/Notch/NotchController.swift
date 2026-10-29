@@ -2,7 +2,7 @@ import AppKit
 import Carbon.HIToolbox
 import SwiftUI
 
-/// Owns the panel and drives state transitions: hover → glance, click/hotkey → open, any exit → idle.
+/// Owns the panel and drives state transitions: hover → glance, click → home, hotkey → open, any exit → idle.
 final class NotchController {
     let model: NotchModel
     private let panel: NotchPanel
@@ -78,21 +78,55 @@ final class NotchController {
         case .open: close()
         case .onboarding: if model.onboarding?.mode == .settings { finishOnboarding() }
         case .dropZone: dropZone.cancelChoosing(restoreFocus: true)
-        case .idle, .glance: open()
+        case .idle, .glance, .home: open()
         }
     }
 
-    func open() {
+    /// Click on the notch or island: the Home modules. The hotkey still goes straight to search.
+    func openHome() {
+        guard model.state == .idle || model.state == .glance else { return }
+        model.hint = nil
+        let frontmost = NSWorkspace.shared.frontmostApplication
+        previousApp = frontmost == .current ? nil : frontmost
+        // Key, so typing in Home reaches handleHomeKey; no text field has focus yet.
+        panel.makeKeyAndOrderFront(nil)
+        model.homePage = .modules
+        withAnimation(NotchMotion.expand) {
+            model.state = .home
+            model.isHovering = false
+        }
+        updateHover()
+    }
+
+    func showHomePage(_ page: HomePage) {
+        guard model.state == .home else { return }
+        withAnimation(NotchMotion.homePage) { model.homePage = page }
+    }
+
+    /// Opens the command panel. From Home it keeps the app captured when Home opened and remembers to return there.
+    func open(scope: SearchScope = .all) {
         guard model.state != .open, model.state != .onboarding, model.state != .dropZone else { return }
+        model.searchReturnsHome = model.state == .home
         model.hint = nil
         model.search.index.refreshIfStale()
         ClipboardPanelState.shared.reset()
         model.resetSearch()
-        let frontmost = NSWorkspace.shared.frontmostApplication
-        previousApp = frontmost == .current ? nil : frontmost
+        model.scope = scope
+        if !model.searchReturnsHome {
+            let frontmost = NSWorkspace.shared.frontmostApplication
+            previousApp = frontmost == .current ? nil : frontmost
+        }
         panel.makeKeyAndOrderFront(nil)
         withAnimation(NotchMotion.expand) { model.state = .open }
         focusSearchField()
+        updateHover()
+    }
+
+    /// Esc from a search that Home opened: back to the module grid, keyboard still in Perch.
+    private func returnHome() {
+        panel.makeFirstResponder(nil) // typing goes to handleHomeKey again, not the old field
+        model.homePage = .modules
+        withAnimation(NotchMotion.expand) { model.state = .home }
         updateHover()
     }
 
@@ -114,7 +148,7 @@ final class NotchController {
     /// - Parameter restoreFocus: hand keyboard focus back to the frontmost app's window.
     ///   Skip it when another app is about to take focus anyway (launch, click elsewhere).
     func close(restoreFocus: Bool = true) {
-        guard model.state == .open else { return }
+        guard model.state == .open || model.state == .home else { return }
         withAnimation(NotchMotion.collapse) {
             model.state = .idle
             model.isHovering = false
@@ -142,7 +176,7 @@ final class NotchController {
     /// Drops the onboarding card (first run) or the single settings page (pill menu → Settings…).
     func showOnboarding(_ mode: OnboardingMode) {
         guard model.state != .onboarding else { return }
-        if model.state != .open {
+        if model.state != .open, model.state != .home {
             let frontmost = NSWorkspace.shared.frontmostApplication
             previousApp = frontmost == .current ? nil : frontmost
         }
@@ -188,7 +222,7 @@ final class NotchController {
         // Fallback if the panel is still key once the morph is done: re-ordering the
         // idle pill releases key status and is not visible at that point.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) { [weak self] in
-            guard let self, model.state != .open, model.state != .onboarding, model.state != .dropZone, panel.isKeyWindow else { return }
+            guard let self, model.state == .idle || model.state == .glance, panel.isKeyWindow else { return }
             panel.orderOut(nil)
             panel.orderFrontRegardless()
         }
@@ -375,7 +409,7 @@ final class NotchController {
             updateHover()
             return event
         case .leftMouseDown, .rightMouseDown:
-            if model.state == .open, !isMouseInside {
+            if model.state == .open || model.state == .home, !isMouseInside {
                 close()
                 return nil
             }
@@ -409,13 +443,14 @@ final class NotchController {
 
     private func handleKeyDown(_ event: NSEvent) -> NSEvent? {
         if model.state == .dropZone { return dropZone.handleKeyDown(event) }
+        if model.state == .home, event.window === panel { return handleHomeKey(event) }
         guard model.state == .open, event.window === panel else { return event }
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         if model.scope == .clipboard, handleClipboardKey(event, modifiers) { return nil }
 
         switch Int(event.keyCode) {
         case kVK_Escape:
-            close()
+            if model.searchReturnsHome { returnHome() } else { close() }
             return nil
         case kVK_DownArrow where model.showsResults:
             model.moveSelection(by: 1)
@@ -447,6 +482,26 @@ final class NotchController {
         return event
     }
 
+    /// Home owns the keyboard. Esc steps back (detail → grid → closed); the first typed character
+    /// opens search and the same event is passed on to the now-focused field, so it is not lost.
+    private func handleHomeKey(_ event: NSEvent) -> NSEvent? {
+        if Int(event.keyCode) == kVK_Escape {
+            if model.homePage == .modules { close() } else { showHomePage(.modules) }
+            return nil
+        }
+        // ⌘/⌃ chords keep their menu meaning.
+        if !event.modifierFlags.intersection([.command, .control]).isEmpty { return event }
+        // Arrow and function keys arrive as private-use characters (U+F700…U+F8FF); they do not start a search.
+        let typesText = event.characters?.unicodeScalars.contains { scalar in
+            !CharacterSet.whitespacesAndNewlines.contains(scalar)
+                && !CharacterSet.controlCharacters.contains(scalar)
+                && !(0xF700...0xF8FF).contains(scalar.value)
+        } ?? false
+        guard typesText else { return nil } // swallowed: no first responder would only beep
+        open()
+        return event
+    }
+
     private var isMouseInside: Bool {
         model.geometry.screenRect(fromWindowRect: model.interactiveRect).contains(NSEvent.mouseLocation)
     }
@@ -460,7 +515,7 @@ final class NotchController {
         panel.ignoresMouseEvents = !inside
 
         switch model.state {
-        case .open, .onboarding, .dropZone:
+        case .open, .home, .onboarding, .dropZone:
             break
         case .idle:
             guard inside != model.isHovering else { return }

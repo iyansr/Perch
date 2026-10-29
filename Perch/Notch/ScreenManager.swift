@@ -16,9 +16,10 @@ struct NotchGeometry: Equatable {
     static let islandSize = CGSize(width: 56, height: 28)
     /// iPhone Dynamic Island, compact with a live activity on both sides of the camera.
     static let islandCompactSize = CGSize(width: 250, height: 28)
+    /// Default width of expanded containers: home, onboarding, drop zone.
     static let panelWidth: CGFloat = 480
-    /// Clipboard scope: list and detail side by side.
-    static let clipboardPanelWidth: CGFloat = 680
+    /// Search mode (search row + results, incl. clipboard list + detail); the surface morphs out to it from home.
+    static let searchPanelWidth: CGFloat = 520
     static let panelGap: CGFloat = 10
     /// Room the idle island needs in the menu bar: compact pill plus its hover swell.
     static let islandClearance: CGFloat = islandCompactSize.width + 12

@@ -14,7 +14,7 @@ struct NotchRootView: View {
         let shape = model.shape
         ZStack(alignment: .top) {
             NotchSurface(model: model, controller: controller)
-                .frame(width: shape.size.width, height: shape.size.height)
+                .frame(width: shape.size.width + 2 * shape.shoulder, height: shape.size.height)
                 .padding(.top, shape.top)
 
             if model.state == .onboarding, let onboarding = model.onboarding {
@@ -41,7 +41,7 @@ struct NotchRootView: View {
         }
         // Typing can grow the hit area (results panel) under a cursor that never moves; re-evaluate pass-through.
         .onChange(of: model.interactiveRect) {
-            if model.state == .open { controller.updateHover() }
+            if model.state == .open || model.state == .home { controller.updateHover() }
         }
     }
 }
@@ -52,13 +52,7 @@ private struct NotchSurface: View {
 
     var body: some View {
         let shape = model.shape
-        let outline = UnevenRoundedRectangle(
-            topLeadingRadius: shape.topRadius,
-            bottomLeadingRadius: shape.bottomRadius,
-            bottomTrailingRadius: shape.bottomRadius,
-            topTrailingRadius: shape.topRadius,
-            style: .continuous
-        )
+        let outline = SurfaceShape(topRadius: shape.topRadius, bottomRadius: shape.bottomRadius, shoulder: shape.shoulder)
 
         let open = model.state == .open
         let solid = solidFraction(height: shape.size.height)
@@ -72,6 +66,7 @@ private struct NotchSurface: View {
             }
             outline.fill(fill(solid: solid))
             content
+                .padding(.horizontal, shape.shoulder) // shoulders sit outside the content width
         }
         .clipShape(outline)
         .overlay {
@@ -91,7 +86,7 @@ private struct NotchSurface: View {
         .contentShape(outline)
         .shadow(color: .black.opacity(model.state == .idle || open ? 0 : 0.4), radius: 22, y: 12)
         .environment(\.colorScheme, .dark)
-        .onTapGesture { controller.open() }
+        .onTapGesture { controller.openHome() }
         .contextMenu { SurfaceMenu(controller: controller) }
         .keyframeAnimator(
             initialValue: 1.0,
@@ -143,6 +138,9 @@ private struct NotchSurface: View {
     @ViewBuilder
     private var content: some View {
         switch model.state {
+        case .home:
+            HomeView(model: model, controller: controller)
+                .transition(.notchContent)
         case .open:
             SearchFieldRow(model: model, topInset: model.geometry.style == .notch ? model.geometry.notchSize.height : 0)
                 .transition(.notchContent)
@@ -184,7 +182,7 @@ private struct NotchSurface: View {
 
 /// Apple Intelligence–style halo that circulates around the container while search work is in flight.
 private struct LoadingGlow: View {
-    let outline: UnevenRoundedRectangle
+    let outline: SurfaceShape
 
     private static let colors: [Color] = [
         Color(red: 0.55, green: 0.62, blue: 1.00), // blue
@@ -298,5 +296,71 @@ struct KeyCap: View {
                     .fill(dark ? Color.clear : Color.primary.opacity(0.07))
                     .strokeBorder(dark ? Color.white.opacity(0.18) : Color.clear)
             }
+    }
+}
+
+/// Outline of the black surface. Convex top corners give the island its pill; in notch mode the top
+/// instead flares out into concave shoulders, the way the hardware notch meets the screen edge.
+/// All three radii animate, so the shoulders grow in as the surface expands.
+nonisolated struct SurfaceShape: InsettableShape {
+    var topRadius: CGFloat
+    var bottomRadius: CGFloat
+    /// Width of each concave shoulder, drawn inside the frame's outer edges.
+    var shoulder: CGFloat
+    private var insetAmount: CGFloat = 0
+
+    init(topRadius: CGFloat, bottomRadius: CGFloat, shoulder: CGFloat) {
+        self.topRadius = topRadius
+        self.bottomRadius = bottomRadius
+        self.shoulder = shoulder
+    }
+
+    var animatableData: AnimatablePair<CGFloat, AnimatablePair<CGFloat, CGFloat>> {
+        get { AnimatablePair(topRadius, AnimatablePair(bottomRadius, shoulder)) }
+        set {
+            topRadius = newValue.first
+            bottomRadius = newValue.second.first
+            shoulder = newValue.second.second
+        }
+    }
+
+    func inset(by amount: CGFloat) -> SurfaceShape {
+        var shape = self
+        shape.insetAmount += amount
+        return shape
+    }
+
+    func path(in frame: CGRect) -> Path {
+        let rect = frame.insetBy(dx: insetAmount, dy: insetAmount)
+        guard rect.width > 0, rect.height > 0 else { return Path() }
+        let s = min(max(shoulder - insetAmount, 0), rect.width / 4, rect.height / 2)
+        let left = rect.minX + s, right = rect.maxX - s
+        let top = rect.minY, bottom = rect.maxY
+        let limit = min((right - left) / 2, rect.height / 2)
+        let t = min(max(topRadius - insetAmount, 0), limit)
+        let b = min(max(bottomRadius - insetAmount, 0), limit)
+
+        var path = Path()
+        if s > 0 {
+            path.move(to: CGPoint(x: rect.minX, y: top))
+            path.addQuadCurve(to: CGPoint(x: left, y: top + s), control: CGPoint(x: left, y: top))
+        } else {
+            path.move(to: CGPoint(x: left, y: top + t))
+        }
+        path.addLine(to: CGPoint(x: left, y: bottom - b))
+        path.addArc(tangent1End: CGPoint(x: left, y: bottom), tangent2End: CGPoint(x: left + b, y: bottom), radius: b)
+        path.addLine(to: CGPoint(x: right - b, y: bottom))
+        path.addArc(tangent1End: CGPoint(x: right, y: bottom), tangent2End: CGPoint(x: right, y: bottom - b), radius: b)
+        if s > 0 {
+            path.addLine(to: CGPoint(x: right, y: top + s))
+            path.addQuadCurve(to: CGPoint(x: rect.maxX, y: top), control: CGPoint(x: right, y: top))
+        } else {
+            path.addLine(to: CGPoint(x: right, y: top + t))
+            path.addArc(tangent1End: CGPoint(x: right, y: top), tangent2End: CGPoint(x: right - t, y: top), radius: t)
+            path.addLine(to: CGPoint(x: left + t, y: top))
+            path.addArc(tangent1End: CGPoint(x: left, y: top), tangent2End: CGPoint(x: left, y: top + t), radius: t)
+        }
+        path.closeSubpath()
+        return path
     }
 }

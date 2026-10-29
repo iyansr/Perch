@@ -73,7 +73,8 @@ struct GlanceCard: View {
     }
 }
 
-private struct GlanceRow: View {
+/// One activity with its actions; used by the glance card and Home's Activity page.
+struct GlanceRow: View {
     let activity: Activity
     let center: ActivityCenter
 
@@ -126,7 +127,7 @@ private struct GlanceRow: View {
     }
 }
 
-private struct CircleButton: View {
+struct CircleButton: View {
     let symbol: String
     let action: () -> Void
 

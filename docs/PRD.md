@@ -63,21 +63,28 @@ The launch audience is developers who already run AI coding agents and live on t
 
 ## Core concept
 
-The app has one surface with three states, and the same states work on both screens.
+The app has one surface with four states, and the same states work on both screens.
 
 ```mermaid
 flowchart LR
   A["Ambient pill<br/>Idle notch or island<br/>Live activity: timer, agent, conversion"]
   G["Glance card<br/>Activity detail<br/>Pause, focus terminal"]
+  H["Home<br/>Modules: activity, timer,<br/>clipboard, search, convert"]
   C["Command panel<br/>Search, clipboard, drop-to-convert,<br/>Ask AI, agents"]
   A -- hover --> G
-  G -- click --> C
   G -- mouse leaves --> A
-  A -- "⌥Space or click (skips glance)" --> C
+  A -- click --> H
+  G -- click --> H
+  H -- "Search or Clipboard module, or start typing" --> C
+  C -- "esc (when opened from Home)" --> H
+  A -- "⌥Space" --> C
+  H -- "esc, click outside, or action done" --> A
   C -- "esc, click outside, or action done" --> A
 ```
 
-The pill is always there and shows live activities; hover peeks, click or hotkey opens the full panel, and every exit returns to the pill.
+The pill is always there and shows live activities; hover peeks, click opens Home, the hotkey opens search directly, and every exit returns to the pill.
+
+**Home.** Clicking the notch or island never lands in a text field. It opens Control Center–style modules inside the black surface: Activity (top three items, most urgent first), Timer (the running timer as a big clock, click to pause, or 5/25/50 min presets), Clipboard (newest clip), Search, and a dashed Convert well for drops. Clicking Activity zooms into the full list with actions; esc or "Home" shrinks it back into the module. The Search and Clipboard modules open the command panel, and esc there returns to Home. Typing any character in Home opens search with that character already in the field. Similar notch apps (Boring Notch, NotchNook, NotchMind, Droppy, NotchDude) also open content on click or hover rather than a search field.
 
 **Screen modes.**
 
@@ -91,7 +98,7 @@ Every feature lives inside the same command panel or the same live activity slot
 
 ### F1. Command panel and search (P0)
 
-- Opens by clicking the notch/island or a global hotkey (chosen by the user at first launch, ⌥Space suggested)
+- Opens with a global hotkey (chosen by the user at first launch, ⌥Space suggested), from Home's Search or Clipboard module, or by typing in Home. Clicking the notch/island opens Home, not search.
 - Searches installed apps; ↵ launches, ↑↓ move, esc closes, click outside closes
 - Chips switch mode: All, Apps, Clipboard, Files, AI
 - Fallback row: "Search the web for …"
@@ -142,7 +149,7 @@ Acceptance: first tokens appear in under 1.5 s on a normal connection; without a
 ### F6. Agent status (P1)
 
 - Shows each running Claude Code / Codex session as a live activity: running, needs input, done, failed
-- Glance card shows project folder and the last event; click focuses the terminal app
+- Glance card shows project folder and the last event; the row's Focus action brings the terminal app forward
 - One-click "Connect Claude Code" writes the hooks config; Codex is set up the same way through its notify setting
 - Generic wrapper for any tool: `notch watch -- <command>`
 
@@ -171,7 +178,7 @@ Each journey starts from the idle pill and ends back there, so the user never ma
 ### J3. Paste something from earlier
 
 1. User remembers copying an address an hour ago.
-2. Opens the panel, presses ⌘2 (Clipboard chip) or types `clip`.
+2. Clicks the notch and picks the Clipboard module, or presses ⌥Space then ⌘2 (Clipboard chip) or types `clip`.
 3. Types "jalan"; the address appears.
 4. ↵ pastes it into the frontmost app and the panel closes.
 
@@ -195,7 +202,7 @@ Each journey starts from the idle pill and ends back there, so the user never ma
 2. The pill shows a small pulsing dot: "Claude · api-server · running".
 3. Claude Code asks for permission; the pill turns amber: "needs input".
 4. User hovers; the glance card shows the project and the last event.
-5. Click focuses the right terminal window. When the task ends, the pill shows a check for 8 s, then returns to idle.
+5. The row's Focus action brings the right terminal window forward. When the task ends, the pill shows a check for 8 s, then returns to idle.
 
 ### J7. Clamshell mode
 

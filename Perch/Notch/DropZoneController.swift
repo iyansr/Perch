@@ -38,12 +38,12 @@ extension NotchModel {
             if choosing {
                 return ShapeMetrics(
                     size: CGSize(width: NotchGeometry.panelWidth, height: notch.height + Self.searchRowHeight),
-                    top: 0, topRadius: 0, bottomRadius: 22
+                    top: 0, topRadius: 0, bottomRadius: 22, shoulder: Self.expandedShoulder
                 )
             }
             return ShapeMetrics(
                 size: CGSize(width: Self.dropTargetWidth + swell, height: notch.height + 52 + swell / 2),
-                top: 0, topRadius: 0, bottomRadius: 24
+                top: 0, topRadius: 0, bottomRadius: 24, shoulder: Self.expandedShoulder
             )
         case .island:
             if choosing {

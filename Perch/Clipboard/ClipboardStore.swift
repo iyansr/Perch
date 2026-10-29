@@ -166,6 +166,19 @@ final class ClipboardStore {
         }
     }
 
+    /// Most recent unpinned row, for the Home clipboard module.
+    func newest() -> ClipboardItem? {
+        do {
+            return try dbQueue.read { db in
+                try Row.fetchOne(db, sql: "SELECT * FROM clip WHERE pinnedAt IS NULL ORDER BY createdAt DESC, id DESC LIMIT 1")
+                    .map(Self.item(from:))
+            }
+        } catch {
+            NSLog("Perch: clipboard read failed: \(error)")
+            return nil
+        }
+    }
+
     nonisolated private static func escapeLike(_ s: String) -> String {
         s.replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "%", with: "\\%")

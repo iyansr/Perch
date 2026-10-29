@@ -8,7 +8,9 @@ enum NotchState: Equatable {
     case idle
     /// Hover peek at activity details.
     case glance
-    /// Command panel with search field and results.
+    /// Clicking the notch: Home modules (activity, timer, clipboard, search, convert).
+    case home
+    /// Command panel with search field and results. Opened by the hotkey, a Home module, or typing in Home.
     case open
     /// First-run flow or settings card; the surface is sized like `.open`.
     case onboarding
@@ -16,18 +18,30 @@ enum NotchState: Equatable {
     case dropZone
 }
 
+/// The view inside `.home`: the module grid, or one module zoomed into its detail.
+enum HomePage: Equatable {
+    case modules
+    case activity
+}
+
 /// Size and corner shape of the black surface for the current state.
 struct ShapeMetrics: Equatable {
     var size: CGSize
     /// Distance from the top screen edge.
     var top: CGFloat
+    /// Convex radius of the top corners (island pill).
     var topRadius: CGFloat
     var bottomRadius: CGFloat
+    /// Concave flare where the top edge meets the screen edge, like the hardware notch's corners.
+    /// Drawn outside `size.width`, so content keeps its full width.
+    var shoulder: CGFloat = 0
 }
 
 @Observable
 final class NotchModel {
     static let earWidth: CGFloat = 44
+    /// Concave top-corner flare of the expanded notch surface, matching the hardware notch's own corners.
+    static let expandedShoulder: CGFloat = 10
     static let searchRowHeight: CGFloat = 44
     /// Search row of the open command surface; taller than the other rows so the fade has room.
     static let openRowHeight: CGFloat = 64
@@ -59,10 +73,6 @@ final class NotchModel {
     private(set) var isLoading = false
     /// Measured height of the results panel; used for click-outside hit testing.
     var panelHeight: CGFloat = 0
-    /// Width of the results panel: the clipboard scope is wider to fit its detail pane.
-    var panelWidth: CGFloat {
-        state == .open && scope == .clipboard ? NotchGeometry.clipboardPanelWidth : NotchGeometry.panelWidth
-    }
     /// Name of the app that had focus when the panel opened; paste targets it.
     var pasteTargetName: String?
     /// Onboarding / settings flow behind `.onboarding`. Kept after the card closes so its exit transition has content.
@@ -71,6 +81,12 @@ final class NotchModel {
     var drop: DropSession?
     /// Short message shown in the collapsed surface (e.g. "Press ⌥Space anytime"); nil when hidden.
     var hint: String?
+    /// Which Home view is showing; Home always opens on `.modules`.
+    var homePage: HomePage = .modules
+    /// Measured height of the Home content below the notch; sizes the surface in `.home`.
+    var homeContentHeight: CGFloat = 320
+    /// Search was opened from Home (module or typing), so esc steps back to Home instead of closing.
+    var searchReturnsHome = false
     /// Bumps to play the idle pill's pulse without an activity finishing.
     private(set) var helloTick = 0
 
@@ -146,20 +162,30 @@ final class NotchModel {
         switch (geometry.style, state) {
         case (_, .dropZone):
             return dropZoneShape
+        case (.notch, .home):
+            return ShapeMetrics(
+                size: CGSize(width: NotchGeometry.panelWidth, height: notch.height + homeContentHeight),
+                top: 0, topRadius: 0, bottomRadius: 24, shoulder: Self.expandedShoulder
+            )
+        case (.island, .home):
+            return ShapeMetrics(
+                size: CGSize(width: NotchGeometry.panelWidth, height: homeContentHeight),
+                top: 6, topRadius: 24, bottomRadius: 24
+            )
         case (.notch, .open):
             return ShapeMetrics(
-                size: CGSize(width: NotchGeometry.panelWidth, height: notch.height + Self.openRowHeight),
-                top: 0, topRadius: 0, bottomRadius: 22
+                size: CGSize(width: NotchGeometry.searchPanelWidth, height: notch.height + Self.openRowHeight),
+                top: 0, topRadius: 0, bottomRadius: 22, shoulder: Self.expandedShoulder
             )
         case (.island, .open):
             return ShapeMetrics(
-                size: CGSize(width: NotchGeometry.panelWidth, height: Self.openRowHeight),
+                size: CGSize(width: NotchGeometry.searchPanelWidth, height: Self.openRowHeight),
                 top: 6, topRadius: Self.openRowHeight / 2, bottomRadius: Self.openRowHeight / 2
             )
         case (.notch, .onboarding):
             return ShapeMetrics(
                 size: CGSize(width: NotchGeometry.panelWidth, height: notch.height + Self.searchRowHeight),
-                top: 0, topRadius: 0, bottomRadius: 22
+                top: 0, topRadius: 0, bottomRadius: 22, shoulder: Self.expandedShoulder
             )
         case (.island, .onboarding):
             return ShapeMetrics(
@@ -169,7 +195,7 @@ final class NotchModel {
         case (.notch, .glance) where activityCount > 0:
             return ShapeMetrics(
                 size: CGSize(width: 400, height: notch.height + glanceContentHeight),
-                top: 0, topRadius: 0, bottomRadius: 24
+                top: 0, topRadius: 0, bottomRadius: 24, shoulder: Self.expandedShoulder
             )
         case (.island, .glance) where activityCount > 0:
             return ShapeMetrics(
@@ -179,7 +205,7 @@ final class NotchModel {
         case (.notch, .idle) where hint != nil:
             return ShapeMetrics(
                 size: CGSize(width: Self.hintWidth, height: notch.height + Self.searchRowHeight),
-                top: 0, topRadius: 0, bottomRadius: 22
+                top: 0, topRadius: 0, bottomRadius: 22, shoulder: Self.expandedShoulder
             )
         case (.island, .idle) where hint != nil:
             return ShapeMetrics(
@@ -216,6 +242,7 @@ final class NotchModel {
             height: shape.top + shape.size.height
         )
         if showsResults || state == .onboarding {
+            let panelWidth = showsResults ? NotchGeometry.searchPanelWidth : NotchGeometry.panelWidth
             rect = rect.union(CGRect(
                 x: (width - panelWidth) / 2,
                 y: panelTop,

@@ -30,7 +30,7 @@ struct CommandPanelView: View {
             }
         }
         .padding(12)
-        .frame(width: model.panelWidth)
+        .frame(width: NotchGeometry.searchPanelWidth)
         .background {
             VisualEffectBackground()
                 .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
@@ -125,7 +125,7 @@ struct CommandPanelView: View {
                     Text("Reveal").padding(.trailing, 6)
                 }
                 KeyCap("esc")
-                Text("Close")
+                Text(model.searchReturnsHome ? "Home" : "Close")
             }
         }
         .font(.system(size: 12))

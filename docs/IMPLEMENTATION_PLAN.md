@@ -134,7 +134,7 @@ Order follows the PRD's 3-day schedule. Each task lists its exit check. The `Per
 
 ### Day 2 — Clipboard history (F2) and Drop-to-convert (F4)
 
-**Reference.** Clipboard behaviour, shortcuts and visual tokens follow [tinycast](https://github.com/abue-ammar/tinycast) (Features/Clipboard, DesignSystem). It is AGPL-3.0: use it as a reference for UI and behaviour only. NEVER copy or adapt its source into Perch. All code is written independently. Do not reuse its geometry: its panel is 750 × 475 with a 290 pt list, and Perch's clipboard panel is `NotchGeometry.clipboardPanelWidth` = 680 (250 pt list, 340 pt split) inside a 760 pt `windowSize`. Reuse only token values: spacing 2/4/6/8/10/12, radii (row 10, thumbnail 6, bar control 8, keycap 6), keycap chip 18 pt, and the opacity ramps (selection 10 %, hover 5 %, control surface 10 %, border 20 %, secondary text 60 %).
+**Reference.** Clipboard behaviour, shortcuts and visual tokens follow [tinycast](https://github.com/abue-ammar/tinycast) (Features/Clipboard, DesignSystem). It is AGPL-3.0: use it as a reference for UI and behaviour only. NEVER copy or adapt its source into Perch. All code is written independently. Do not reuse its geometry: its panel is 750 × 475 with a 290 pt list, and Perch's clipboard panel uses the search-mode width `NotchGeometry.searchPanelWidth` = 520 (250 pt list, 340 pt split) inside a 760 pt `windowSize`. Reuse only token values: spacing 2/4/6/8/10/12, radii (row 10, thumbnail 6, bar control 8, keycap 6), keycap chip 18 pt, and the opacity ramps (selection 10 %, hover 5 %, control surface 10 %, border 20 %, secondary text 60 %).
 
 **2.1 ClipboardStore**
 - Add GRDB. Table `clip(id, kind[text|image|file], text, imagePath, sourceBundleID, hash UNIQUE, pinnedAt NULL, createdAt)`.
@@ -163,7 +163,7 @@ Order follows the PRD's 3-day schedule. Each task lists its exit check. The `Per
 - Exit: copy in Safari → row in < 1 s; copy a password in 1Password/Passwords.app → no row; copy a file in Finder → file row, not a text row with its name.
 
 **2.3 Paste and Clipboard UI**
-- Layout: Raycast-style split in a wider panel (`NotchGeometry.clipboardPanelWidth` = 680; `windowSize` widened to 760). Left: 250 pt list, each row a text preview, image thumbnail, file icon or colour swatch; pinned rows under a "Pinned" header. Right: preview of the selected clip (monospaced text, fitted image, file list, colour swatch) over an "Information" table (source app, type, characters/words, dimensions/size, copied time). Click selects, double-click pastes. Selection lands on the newest unpinned row after any reset.
+- Layout: Raycast-style split. Two widths: home, onboarding and drop zone use the default `NotchGeometry.panelWidth` = 480; search mode (search row + results, including clipboard) uses `NotchGeometry.searchPanelWidth` = 520, and the surface morphs out from home to it. Both fit in the 760 pt `windowSize`. Left: 250 pt list, each row a text preview, image thumbnail, file icon or colour swatch; pinned rows under a "Pinned" header. Right: preview of the selected clip (monospaced text, fitted image, file list, colour swatch) over an "Information" table (source app, type, characters/words, dimensions/size, copied time). Click selects, double-click pastes. Selection lands on the newest unpinned row after any reset.
 - Thumbnails: decode a 256 px derivative for rows and a 900 px one for the selected-row preview, cached in memory. Never decode the full bitmap per row.
 - Footer: "Clear history" (with a confirm step) and the type filter on the left; `⌘↵ Copy`, `⌘. Pin` hints and a primary "Paste to <App> ↵" button on the right, naming the app that had focus when the panel opened.
 - Type filter: a fixed-width popover (about 200 pt) on ⌘P, opened on the active filter. A filter that empties the list shows "No <type> in history", not "history is empty". ⌘P does not clash with the ⌘1–⌘5 chips.
@@ -189,7 +189,7 @@ Order follows the PRD's 3-day schedule. Each task lists its exit check. The `Per
 - Detect a drag start globally: in the existing global `.leftMouseDragged` monitor, compare `NSPasteboard(name: .drag).changeCount` to the last seen value.
 - On a new drag that carries file URLs:
   - Set `panel.ignoresMouseEvents = false`.
-  - Grow the interactive rect to a 480 × 120 pt band along the top edge (the PRD drag-target risk).
+  - Grow the interactive rect to a `panelWidth` × 120 pt band along the top edge (the PRD drag-target risk).
   - Enter a new `NotchState.dropZone` labelled "Drop to convert".
 - `NotchPanel` registers for `.fileURL` and implements `NSDraggingDestination` on its content view: highlight on enter, revert on exit or on `.leftMouseUp` with no drop.
 - Non-image files show "Images only in v0.1" and reject the drop.

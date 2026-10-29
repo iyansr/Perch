@@ -9,6 +9,9 @@ enum NotchMotion {
     static let collapse = Animation.timingCurve(0.32, 0.72, 0, 1, duration: 0.5).delay(0.1)
     /// Hover grow/shrink of the idle pill.
     static let hover = Animation.timingCurve(0.32, 0.72, 0, 1, duration: 0.35)
+    /// Home module ↔ detail zoom: a spring so a second click mid-zoom redirects from where it is.
+    /// Damping 0.9 keeps a hint of life without overshoot (a click carries no momentum).
+    static let homePage = Animation.spring(response: 0.42, dampingFraction: 0.9)
 
     /// `.island.open .inrow`: opacity .3s @ .16s, transform .45s @ .14s, blur .3s @ .16s.
     static let contentIn = Animation.timingCurve(0.32, 0.72, 0, 1, duration: 0.45).delay(0.15)
