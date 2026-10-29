@@ -9,11 +9,18 @@ final class NotchController {
     private let screens = ScreenManager()
     private var monitors: [Any] = []
     /// App that was frontmost when the panel opened; gets the keyboard back on close.
-    private var previousApp: NSRunningApplication?
+    private var previousApp: NSRunningApplication? {
+        didSet { model.pasteTargetName = previousApp?.localizedName }
+    }
+    /// Runs the conversion the user picks from the drop zone's action list.
+    let converter: ImageConverter
+    let dropZone: DropZoneController
 
     init(activities: ActivityCenter, search: SearchEngine) {
         model = NotchModel(geometry: screens.geometry, activities: activities, search: search)
         panel = NotchPanel(frame: screens.geometry.windowFrame)
+        converter = ImageConverter(activities: activities)
+        dropZone = DropZoneController(model: model, panel: panel, converter: converter)
         search.index.onUpdate = { [weak self] in self?.model.refreshResults() }
         search.files.onUpdate = { [weak self] in self?.model.refreshResults() }
     }
@@ -22,6 +29,13 @@ final class NotchController {
         let hostingView = FirstMouseHostingView(rootView: NotchRootView(model: model, controller: self))
         hostingView.sizingOptions = []
         panel.contentView = hostingView
+        hostingView.dropTarget = dropZone
+        dropZone.refreshPointer = { [weak self] in self?.updateHover() }
+        dropZone.releaseKeyboard = { [weak self] in self?.returnKeyboardFocus() }
+        dropZone.capturePreviousApp = { [weak self] in
+            let frontmost = NSWorkspace.shared.frontmostApplication
+            self?.previousApp = frontmost == .current ? nil : frontmost
+        }
         panel.orderFrontRegardless()
 
         screens.onChange = { [weak self] geometry in
@@ -30,9 +44,15 @@ final class NotchController {
             panel.setFrame(geometry.windowFrame, display: true)
             updateHover()
         }
+        screens.holdsPosition = { [weak self] in
+            guard let self else { return true }
+            return model.state != .idle || model.isHovering
+        }
+        screens.refresh() // first extras scan, now that changes reach the panel
 
         HotkeyManager.shared.onPress = { [weak self] in self?.toggle() }
         observeHotkey()
+        observeClipboard()
 
         installEventMonitors()
 
@@ -57,14 +77,16 @@ final class NotchController {
         switch model.state {
         case .open: close()
         case .onboarding: if model.onboarding?.mode == .settings { finishOnboarding() }
+        case .dropZone: dropZone.cancelChoosing(restoreFocus: true)
         case .idle, .glance: open()
         }
     }
 
     func open() {
-        guard model.state != .open, model.state != .onboarding else { return }
+        guard model.state != .open, model.state != .onboarding, model.state != .dropZone else { return }
         model.hint = nil
         model.search.index.refreshIfStale()
+        ClipboardPanelState.shared.reset()
         model.resetSearch()
         let frontmost = NSWorkspace.shared.frontmostApplication
         previousApp = frontmost == .current ? nil : frontmost
@@ -166,7 +188,7 @@ final class NotchController {
         // Fallback if the panel is still key once the morph is done: re-ordering the
         // idle pill releases key status and is not visible at that point.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) { [weak self] in
-            guard let self, model.state != .open, model.state != .onboarding, panel.isKeyWindow else { return }
+            guard let self, model.state != .open, model.state != .onboarding, model.state != .dropZone, panel.isKeyWindow else { return }
             panel.orderOut(nil)
             panel.orderFrontRegardless()
         }
@@ -188,6 +210,8 @@ final class NotchController {
         case let .file(url):
             close(restoreFocus: false)
             NSWorkspace.shared.open(url)
+        case let .clip(item):
+            runClip(item, .paste)
         case .ask:
             // The Ask AI panel arrives with task 3.4; until then the row is display-only.
             break
@@ -199,11 +223,131 @@ final class NotchController {
         }
     }
 
+    // MARK: Clipboard
+
+    /// Filter popover and the clipboard list react to the store; `ClipboardPanelState` owns the UI state.
+    private func observeClipboard() {
+        let state = ClipboardPanelState.shared
+        state.onFilterChange = { [weak self] in self?.model.refreshResults() }
+        state.observeStore { [weak self] in
+            guard let self, model.state == .open, model.scope == .clipboard else { return }
+            model.refreshResults(keepingSelection: true)
+        }
+    }
+
+    /// ⌘P filter popover, ↵ chords and ⌘. while the Clipboard chip is showing. Returns true when consumed.
+    private func handleClipboardKey(_ event: NSEvent, _ modifiers: NSEvent.ModifierFlags) -> Bool {
+        let state = ClipboardPanelState.shared
+        let chord = modifiers.intersection([.command, .control, .option, .shift])
+        let code = Int(event.keyCode)
+
+        if code == kVK_ANSI_P, chord == .command {
+            state.toggleFilter()
+            return true
+        }
+        if state.isFilterOpen {
+            switch code {
+            case kVK_Escape: state.isFilterOpen = false
+            case kVK_DownArrow: state.moveFilterCursor(by: 1)
+            case kVK_UpArrow: state.moveFilterCursor(by: -1)
+            case kVK_Return, kVK_ANSI_KeypadEnter: state.apply(ClipFilter.allCases[state.filterCursor])
+            default: return false // typing keeps going to the search field
+            }
+            return true
+        }
+        if state.isConfirmingClear, code == kVK_Escape {
+            state.isConfirmingClear = false
+            return true
+        }
+
+        switch code {
+        case kVK_Return, kVK_ANSI_KeypadEnter:
+            guard case let .clip(item)? = model.selectedResult else { return true }
+            switch chord {
+            case []: runClip(item, .paste)
+            case .command: runClip(item, .copy)
+            case [.control, .command]: runClip(item, .plainPaste)
+            case .option: runClip(item, .keepOpen)
+            default: return false
+            }
+            return true
+        case kVK_ANSI_Period where chord == .command:
+            if case let .clip(item)? = model.selectedResult { togglePin(item) }
+            return true
+        default:
+            return false
+        }
+    }
+
+    func togglePin(_ item: ClipboardItem) {
+        if item.isPinned { ClipboardStore.shared.unpin(item.id) } else { ClipboardStore.shared.pin(item.id) }
+    }
+
+    /// Writes the row to the pasteboard, then (depending on `requested`) pastes it into the app that was frontmost.
+    func runClip(_ item: ClipboardItem, _ requested: ClipAction) {
+        let paster = Paster.shared
+        let store = ClipboardStore.shared
+        let state = ClipboardPanelState.shared
+        // An image has no plain form: ⌃⌘↵ falls back to ⌘↵.
+        let action: ClipAction = requested == .plainPaste && item.kind == .image ? .copy : requested
+
+        if action != .copy, paster.isDoublePaste() { return }
+        if case let .missing(message) = paster.write(item, plain: action == .plainPaste) {
+            state.showNotice(message) // the row stays
+            return
+        }
+
+        // ⌥↵ never promotes, even when it degrades to a copy. The marker hides our write from the poller,
+        // so promotion is explicit; pinned rows keep their place.
+        let promotes = !item.isPinned && action != .keepOpen
+        switch action {
+        case .copy:
+            if promotes { store.promote(item.id) }
+            close()
+        case .paste, .plainPaste, .keepOpen:
+            guard paster.canPaste else {
+                if promotes { store.promote(item.id) }
+                close()
+                flashHint("Copied — enable paste in Settings")
+                return
+            }
+            if action == .keepOpen {
+                guard let target = previousApp, !target.isTerminated else {
+                    state.showNotice("Copied")
+                    return
+                }
+                paster.postPaste(to: target, direct: true, prepare: {}, completion: {})
+                return
+            }
+            let target = previousApp
+            close()
+            paster.postPaste(to: target, direct: false, prepare: { [weak self] in self?.releaseKeyStatus() }) {
+                if promotes { store.promote(item.id) }
+            }
+        }
+    }
+
+    /// A non-activating panel can stay key after `close()`; the synthetic ⌘V would then land in Perch's own search field.
+    private func releaseKeyStatus() {
+        guard model.state != .open, panel.isKeyWindow else { return }
+        panel.orderOut(nil)
+        panel.orderFrontRegardless()
+    }
+
+    /// Short message in the collapsed pill; 2 s on screen after the 0.6 s collapse morph.
+    private func flashHint(_ text: String) {
+        withAnimation(NotchMotion.collapse) { model.hint = text }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) { [weak self] in
+            guard let self, model.hint == text else { return }
+            withAnimation(NotchMotion.collapse) { self.model.hint = nil }
+        }
+    }
+
     // MARK: Events
 
     private func installEventMonitors() {
         if let local = NSEvent.addLocalMonitorForEvents(
-            matching: [.mouseMoved, .leftMouseDown, .rightMouseDown, .keyDown],
+            matching: [.mouseMoved, .leftMouseDown, .rightMouseDown, .leftMouseUp, .keyDown],
             handler: { [weak self] event in
                 guard let self else { return event }
                 return handleLocal(event)
@@ -212,7 +356,7 @@ final class NotchController {
             monitors.append(local)
         }
         if let global = NSEvent.addGlobalMonitorForEvents(
-            matching: [.mouseMoved, .leftMouseDown, .rightMouseDown, .leftMouseDragged],
+            matching: [.mouseMoved, .leftMouseDown, .rightMouseDown, .leftMouseDragged, .leftMouseUp],
             handler: { [weak self] event in
                 guard let self else { return }
                 handleGlobal(event)
@@ -226,9 +370,17 @@ final class NotchController {
         switch event.type {
         case .keyDown:
             return handleKeyDown(event)
+        case .leftMouseUp:
+            dropZone.handleMouseUp()
+            updateHover()
+            return event
         case .leftMouseDown, .rightMouseDown:
             if model.state == .open, !isMouseInside {
                 close()
+                return nil
+            }
+            if model.state == .dropZone, !isMouseInside {
+                dropZone.cancelChoosing(restoreFocus: true)
                 return nil
             }
             return event
@@ -243,14 +395,23 @@ final class NotchController {
         case .leftMouseDown, .rightMouseDown:
             // A click in another app: it takes focus itself.
             close(restoreFocus: false)
+            dropZone.cancelChoosing(restoreFocus: false)
+        case .leftMouseDragged:
+            dropZone.handleDragEvent()
+            updateHover()
+        case .leftMouseUp:
+            dropZone.handleMouseUp()
+            updateHover()
         default:
             updateHover()
         }
     }
 
     private func handleKeyDown(_ event: NSEvent) -> NSEvent? {
+        if model.state == .dropZone { return dropZone.handleKeyDown(event) }
         guard model.state == .open, event.window === panel else { return event }
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if model.scope == .clipboard, handleClipboardKey(event, modifiers) { return nil }
 
         switch Int(event.keyCode) {
         case kVK_Escape:
@@ -297,7 +458,7 @@ final class NotchController {
         panel.ignoresMouseEvents = !inside
 
         switch model.state {
-        case .open, .onboarding:
+        case .open, .onboarding, .dropZone:
             break
         case .idle:
             guard inside != model.isHovering else { return }

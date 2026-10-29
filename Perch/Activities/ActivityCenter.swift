@@ -17,6 +17,7 @@ struct Activity: Identifiable, Equatable {
 
     enum Kind: Equatable {
         case timer
+        case conversion(batchID: UUID)
     }
 
     let id: UUID
@@ -27,6 +28,8 @@ struct Activity: Identifiable, Equatable {
     var status: Status
     var progress: Progress
     var updatedAt: Date
+    /// Files the activity produced; the glance card offers to reveal them in Finder.
+    var outputs: [URL] = []
 
     /// Lower is more urgent; finished and blocked items surface before running ones.
     var urgency: Int {
@@ -90,6 +93,34 @@ final class ActivityCenter {
         let end = Date().addingTimeInterval(remaining)
         items[index].progress = .countdown(start: end.addingTimeInterval(-total), end: end)
         scheduleCompletion(of: id, at: end)
+    }
+
+    // MARK: Fraction-progress activities
+
+    /// Starts a running activity with a determinate progress ring, e.g. an image-conversion batch.
+    /// Finish it with `finish(_:status:)`.
+    @discardableResult
+    func startProgress(id: UUID = UUID(), kind: Activity.Kind, symbol: String, title: String, detail: String) -> UUID {
+        let activity = Activity(
+            id: id,
+            kind: kind,
+            symbol: symbol,
+            title: title,
+            detail: detail,
+            status: .running,
+            progress: .fraction(0),
+            updatedAt: Date()
+        )
+        withAnimation(NotchMotion.expand) { items.append(activity) }
+        return id
+    }
+
+    /// Updates a progress activity in place. `nil` arguments leave that field unchanged.
+    func updateProgress(_ id: UUID, fraction: Double? = nil, detail: String? = nil, outputs: [URL]? = nil) {
+        guard let index = index(of: id) else { return }
+        if let fraction { items[index].progress = .fraction(min(max(fraction, 0), 1)) }
+        if let detail { items[index].detail = detail }
+        if let outputs { items[index].outputs = outputs }
     }
 
     // MARK: Lifecycle

@@ -20,6 +20,12 @@ struct NotchRootView: View {
                     .transition(.commandPanel)
             }
 
+            if model.state == .dropZone, let drop = model.drop, drop.phase == .choosing {
+                DropActionPanel(model: model, controller: controller)
+                    .padding(.top, model.panelTop)
+                    .transition(.commandPanel)
+            }
+
             if model.state == .open {
                 CommandPanelView(model: model, controller: controller)
                     .padding(.top, model.panelTop)
@@ -82,6 +88,17 @@ private struct NotchSurface: View {
                     topInset: model.geometry.style == .notch ? model.geometry.notchSize.height : 0
                 )
                 .transition(.notchContent)
+            }
+        case .dropZone:
+            if let drop = model.drop {
+                let topInset = model.geometry.style == .notch ? model.geometry.notchSize.height : 0
+                if drop.phase == .choosing {
+                    DropChoosingHeader(drop: drop, topInset: topInset)
+                        .transition(.notchContent)
+                } else {
+                    DropTargetContent(drop: drop, topInset: topInset)
+                        .transition(.notchContent)
+                }
             }
         case .idle where model.hint != nil:
             OnboardingHint(

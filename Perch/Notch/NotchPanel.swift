@@ -35,5 +35,28 @@ final class NotchPanel: NSPanel {
 
 /// Lets the first click on the (never active) panel reach SwiftUI instead of only focusing the window.
 final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
+    /// Receives file drags over the panel; setting it registers the view for `.fileURL`.
+    weak var dropTarget: FileDropTarget? {
+        didSet { registerForDraggedTypes(dropTarget == nil ? [] : [.fileURL]) }
+    }
+
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        dropTarget?.dragEntered(sender) ?? []
+    }
+
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+        dropTarget?.dragEntered(sender) ?? []
+    }
+
+    override func draggingExited(_ sender: NSDraggingInfo?) {
+        dropTarget?.dragExited()
+    }
+
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool { true }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        dropTarget?.performDrop(sender) ?? false
+    }
 }

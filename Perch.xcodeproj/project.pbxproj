@@ -6,6 +6,11 @@
 	objectVersion = 90;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		000000000000000300000001 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000310000001 /* GRDB */; };
+		000000000000000300000002 /* libwebp in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000310000002 /* libwebp */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		000000000000000250000000 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -38,6 +43,8 @@
 		000000000000000130000000 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
+				000000000000000300000001 /* GRDB in Frameworks */,
+				000000000000000300000002 /* libwebp in Frameworks */,
 			);
 		};
 		000000000000000231000000 /* Frameworks */ = {
@@ -83,6 +90,10 @@
 				000000000000000000000010 /* Perch */,
 			);
 			name = Perch;
+			packageProductDependencies = (
+				000000000000000310000001 /* GRDB */,
+				000000000000000310000002 /* libwebp */,
+			);
 			productName = MyApp;
 			productReference = 000000000000000000000120 /* Perch.app */;
 			productType = "com.apple.product-type.application";
@@ -136,6 +147,10 @@
 			);
 			mainGroup = 000000000000000000000001;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				000000000000000320000001 /* XCRemoteSwiftPackageReference "GRDB" */,
+				000000000000000320000002 /* XCRemoteSwiftPackageReference "libwebp-Xcode" */,
+			);
 			preferredProjectObjectVersion = 90;
 			productRefGroup = 000000000000000000000020 /* Products */;
 			projectDirPath = "";
@@ -452,6 +467,38 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		000000000000000320000001 /* XCRemoteSwiftPackageReference "GRDB" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/groue/GRDB.swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 7.11.1;
+			};
+		};
+		000000000000000320000002 /* XCRemoteSwiftPackageReference "libwebp-Xcode" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/SDWebImage/libwebp-Xcode";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.6.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		000000000000000310000001 /* GRDB */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 000000000000000320000001 /* XCRemoteSwiftPackageReference "GRDB" */;
+			productName = GRDB;
+		};
+		000000000000000310000002 /* libwebp */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 000000000000000320000002 /* XCRemoteSwiftPackageReference "libwebp-Xcode" */;
+			productName = libwebp;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 000000000000000000000000 /* Project object */;
 }

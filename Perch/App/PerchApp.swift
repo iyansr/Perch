@@ -17,5 +17,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let controller = NotchController(activities: ActivityCenter(), search: SearchEngine())
         controller.start()
         self.controller = controller
+        ClipboardMonitor.shared.start()
     }
 }

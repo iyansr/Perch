@@ -115,6 +115,12 @@ private struct GlanceRow: View {
                     EmptyView()
                 }
             }
+            if case .conversion = activity.kind, !activity.outputs.isEmpty {
+                CircleButton(symbol: "folder") {
+                    NSWorkspace.shared.activateFileViewerSelecting(activity.outputs)
+                }
+                .help("Reveal in Finder")
+            }
             CircleButton(symbol: "xmark") { center.dismiss(activity.id) }
         }
     }

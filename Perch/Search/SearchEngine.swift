@@ -27,6 +27,8 @@ enum SearchResult: Identifiable, Equatable {
     case file(URL)
     /// "Ask AI" row.
     case ask(String)
+    /// Clipboard history row; ↵ pastes, ⌘↵ copies.
+    case clip(ClipboardItem)
 
     var id: String {
         switch self {
@@ -36,6 +38,7 @@ enum SearchResult: Identifiable, Equatable {
         case let .web(query): "web:\(query)"
         case let .file(url): "file:\(url.path)"
         case let .ask(query): "ask:\(query)"
+        case let .clip(item): "clip:\(item.id)"
         }
     }
 
@@ -47,6 +50,7 @@ enum SearchResult: Identifiable, Equatable {
         case let .web(query): "Search the web for “\(query)”"
         case let .file(url): url.lastPathComponent
         case let .ask(query): "Ask AI “\(query)”"
+        case let .clip(item): item.previewText
         }
     }
 
@@ -59,6 +63,7 @@ enum SearchResult: Identifiable, Equatable {
         case .web: "Web Search"
         case .file: "File"
         case .ask: "Ask AI"
+        case .clip(let item): item.kindLabel
         }
     }
 }
@@ -86,8 +91,9 @@ final class SearchEngine {
             return files.results.map(SearchResult.file)
         }
         files.cancel()
-        // Clipboard history arrives with ClipboardStore; the chip shows its empty state until then.
-        if scope == .clipboard { return [] }
+        if scope == .clipboard {
+            return ClipboardStore.shared.search(query, filter: ClipboardPanelState.shared.filter).map(SearchResult.clip)
+        }
         if scope == .ai { return query.isEmpty ? [] : [.ask(query)] }
         guard !query.isEmpty else {
             let recents = recentApps

@@ -12,6 +12,8 @@ enum NotchState: Equatable {
     case open
     /// First-run flow or settings card; the surface is sized like `.open`.
     case onboarding
+    /// A file drag is under way: the "Drop to convert" target, then the conversion action list after a drop.
+    case dropZone
 }
 
 /// Size and corner shape of the black surface for the current state.
@@ -53,8 +55,16 @@ final class NotchModel {
     private(set) var results: [SearchResult] = []
     /// Measured height of the results panel; used for click-outside hit testing.
     var panelHeight: CGFloat = 0
+    /// Width of the results panel: the clipboard scope is wider to fit its detail pane.
+    var panelWidth: CGFloat {
+        state == .open && scope == .clipboard ? NotchGeometry.clipboardPanelWidth : NotchGeometry.panelWidth
+    }
+    /// Name of the app that had focus when the panel opened; paste targets it.
+    var pasteTargetName: String?
     /// Onboarding / settings flow behind `.onboarding`. Kept after the card closes so its exit transition has content.
     var onboarding: OnboardingState?
+    /// Drag/drop session behind `.dropZone`. Kept after the zone closes so its exit transition has content.
+    var drop: DropSession?
     /// Short message shown in the collapsed surface (e.g. "Press ⌥Space anytime"); nil when hidden.
     var hint: String?
     /// Bumps to play the idle pill's pulse without an activity finishing.
@@ -92,9 +102,19 @@ final class NotchModel {
         refreshResults()
     }
 
-    func refreshResults() {
+    /// - Parameter keepingSelection: after a store change, stay on the same row when it still exists.
+    func refreshResults(keepingSelection: Bool = false) {
+        let previous = keepingSelection ? selectedResult?.id : nil
         results = search.results(for: query, scope: scope)
-        selection = 0
+        selection = previous.flatMap { id in results.firstIndex { $0.id == id } } ?? defaultSelection
+    }
+
+    /// Clipboard lands on the newest unpinned row, below the "Pinned" header; everything else on the first row.
+    private var defaultSelection: Int {
+        guard scope == .clipboard else { return 0 }
+        return results.firstIndex { result in
+            if case let .clip(item) = result { !item.isPinned } else { false }
+        } ?? 0
     }
 
     func moveSelection(by delta: Int) {
@@ -114,6 +134,8 @@ final class NotchModel {
         let hover: CGFloat = isHovering ? 1 : 0
 
         switch (geometry.style, state) {
+        case (_, .dropZone):
+            return dropZoneShape
         case (.notch, .open), (.notch, .onboarding):
             return ShapeMetrics(
                 size: CGSize(width: NotchGeometry.panelWidth, height: notch.height + Self.searchRowHeight),
@@ -122,7 +144,7 @@ final class NotchModel {
         case (.island, .open), (.island, .onboarding):
             return ShapeMetrics(
                 size: CGSize(width: NotchGeometry.panelWidth, height: Self.searchRowHeight),
-                top: 8, topRadius: Self.searchRowHeight / 2, bottomRadius: Self.searchRowHeight / 2
+                top: geometry.islandTop + 8, topRadius: Self.searchRowHeight / 2, bottomRadius: Self.searchRowHeight / 2
             )
         case (.notch, .glance) where activityCount > 0:
             return ShapeMetrics(
@@ -132,7 +154,7 @@ final class NotchModel {
         case (.island, .glance) where activityCount > 0:
             return ShapeMetrics(
                 size: CGSize(width: 400, height: glanceContentHeight),
-                top: 6, topRadius: 22, bottomRadius: 22
+                top: geometry.islandTop + 6, topRadius: 22, bottomRadius: 22
             )
         case (.notch, .idle) where hint != nil:
             return ShapeMetrics(
@@ -142,7 +164,7 @@ final class NotchModel {
         case (.island, .idle) where hint != nil:
             return ShapeMetrics(
                 size: CGSize(width: Self.hintWidth, height: Self.searchRowHeight),
-                top: 8, topRadius: Self.searchRowHeight / 2, bottomRadius: Self.searchRowHeight / 2
+                top: geometry.islandTop + 8, topRadius: Self.searchRowHeight / 2, bottomRadius: Self.searchRowHeight / 2
             )
         case (.notch, _):
             let ears = activityCount > 0 ? 2 * Self.earWidth : 0
@@ -154,7 +176,7 @@ final class NotchModel {
             // Same pill as iPhone's Dynamic Island: capsule radius, widens for a live activity, swells on hover.
             let base = activityCount > 0 ? NotchGeometry.islandCompactSize : notch
             let size = CGSize(width: base.width + 12 * hover, height: base.height + 4 * hover)
-            return ShapeMetrics(size: size, top: 5, topRadius: size.height / 2, bottomRadius: size.height / 2)
+            return ShapeMetrics(size: size, top: geometry.islandTop + 5, topRadius: size.height / 2, bottomRadius: size.height / 2)
         }
     }
 
@@ -175,11 +197,23 @@ final class NotchModel {
         )
         if state == .open || state == .onboarding {
             rect = rect.union(CGRect(
-                x: (width - NotchGeometry.panelWidth) / 2,
+                x: (width - panelWidth) / 2,
                 y: panelTop,
-                width: NotchGeometry.panelWidth,
+                width: panelWidth,
                 height: panelHeight
             ))
+        }
+        if state == .dropZone, let drop {
+            if drop.phase == .choosing {
+                rect = rect.union(CGRect(
+                    x: (width - NotchGeometry.panelWidth) / 2,
+                    y: panelTop,
+                    width: NotchGeometry.panelWidth,
+                    height: panelHeight
+                ))
+            } else {
+                rect = rect.union(Self.dropBand(windowWidth: width))
+            }
         }
         return rect.insetBy(dx: -4, dy: -4)
     }

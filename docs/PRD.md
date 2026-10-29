@@ -82,7 +82,7 @@ The pill is always there and shows live activities; hover peeks, click or hotkey
 **Screen modes.**
 
 - **Built-in display:** the black shape grows out of the hardware notch, flush with the top edge.
-- **External display / clamshell:** no notch, so a small floating pill sits at the top centre and expands the same way.
+- **External display / clamshell:** no notch, so a small floating pill sits at the top centre and expands the same way. macOS keeps menu bar icons out of a hardware notch but not out of the island, so when the icons reach under the centre the island steps left of them. Reading icon positions needs Accessibility; without it the island hangs just below the menu bar so it never covers icons.
 - The app re-checks the screen whenever displays change, so closing or opening the lid switches modes live.
 
 ## Feature requirements

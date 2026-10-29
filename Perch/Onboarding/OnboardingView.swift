@@ -30,17 +30,26 @@ struct OnboardingHeader: View {
     }
 }
 
-/// "Press ⌥Space anytime", shown in the collapsed surface for a moment after the first run.
+/// Pill message shown in the collapsed surface for a moment: "Press ⌥Space anytime" after the first run,
+/// or any other short text (e.g. "Copied — enable paste in Settings").
 struct OnboardingHint: View {
     let text: String
     let shortcut: String
     let topInset: CGFloat
 
     var body: some View {
-        HStack(spacing: 8) {
-            Text("Press")
-            KeyCap(shortcut, dark: true)
-            Text("anytime")
+        Group {
+            if text == "Press \(shortcut) anytime" {
+                HStack(spacing: 8) {
+                    Text("Press")
+                    KeyCap(shortcut, dark: true)
+                    Text("anytime")
+                }
+            } else {
+                Text(text)
+                    .lineLimit(1)
+                    .padding(.horizontal, 16)
+            }
         }
         .font(.system(size: 13, weight: .medium))
         .foregroundStyle(.white.opacity(0.85))

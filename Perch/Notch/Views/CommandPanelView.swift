@@ -15,17 +15,22 @@ struct CommandPanelView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             chips
-            Text(model.sectionTitle)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 10)
-                .padding(.top, 4)
-                .padding(.bottom, 6)
-            list
-            footer
+            if model.scope == .clipboard {
+                ClipboardListView(model: model, controller: controller)
+                ClipboardFooter(model: model, controller: controller)
+            } else {
+                Text(model.sectionTitle)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.top, 4)
+                    .padding(.bottom, 6)
+                list
+                footer
+            }
         }
         .padding(12)
-        .frame(width: NotchGeometry.panelWidth)
+        .frame(width: model.panelWidth)
         .background {
             VisualEffectBackground()
                 .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
@@ -93,7 +98,7 @@ struct CommandPanelView: View {
     private var emptyMessage: String {
         let hasQuery = !model.query.trimmingCharacters(in: .whitespaces).isEmpty
         switch model.scope {
-        case .clipboard: return "Clipboard history is empty"
+        case .clipboard: return "" // ClipboardListView draws its own empty states
         case .files: return hasQuery ? "No files match “\(model.query)”" : "Type to search files"
         case .ai: return "Type a question to ask AI"
         case .all, .apps: return hasQuery ? "No results for “\(model.query)”" : "Indexing applications…"
@@ -199,6 +204,7 @@ private struct ResultRow: View {
         case .timer: ("timer", .orange)
         case .web: ("globe", Color(red: 0.04, green: 0.56, blue: 0.84))
         case .file: ("doc", .gray)
+        case .clip: ("doc.on.clipboard", .gray)
         case .ask: ("sparkles", .purple)
         }
     }
