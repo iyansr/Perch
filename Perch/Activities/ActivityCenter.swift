@@ -43,20 +43,12 @@ struct Activity: Identifiable, Equatable {
 @Observable
 final class ActivityCenter {
     static let autoDismissDelay: Duration = .seconds(8)
-    private static let soundsKey = "perch.playsSounds"
 
     private(set) var items: [Activity] = []
     /// Bumps whenever an activity finishes; views animate on it.
     private(set) var completionTick = 0
-    var playsSounds: Bool {
-        didSet { UserDefaults.standard.set(playsSounds, forKey: Self.soundsKey) }
-    }
 
     @ObservationIgnored private var tasks: [UUID: Task<Void, Never>] = [:]
-
-    init() {
-        playsSounds = UserDefaults.standard.object(forKey: Self.soundsKey) as? Bool ?? true
-    }
 
     /// Most urgent first, then most recent.
     var sorted: [Activity] {
@@ -108,7 +100,7 @@ final class ActivityCenter {
         items[index].progress = .fraction(1)
         items[index].updatedAt = Date()
         completionTick += 1
-        if playsSounds {
+        if AppSettings.shared.playsSounds {
             NSSound(named: status == .failed ? "Basso" : "Glass")?.play()
         }
         tasks[id]?.cancel()

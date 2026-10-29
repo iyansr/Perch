@@ -14,6 +14,12 @@ struct NotchRootView: View {
                 .frame(width: shape.size.width, height: shape.size.height)
                 .padding(.top, shape.top)
 
+            if model.state == .onboarding, let onboarding = model.onboarding {
+                OnboardingCard(model: model, state: onboarding, controller: controller)
+                    .padding(.top, model.panelTop)
+                    .transition(.commandPanel)
+            }
+
             if model.state == .open {
                 CommandPanelView(model: model, controller: controller)
                     .padding(.top, model.panelTop)
@@ -48,8 +54,11 @@ private struct NotchSurface: View {
         .shadow(color: .black.opacity(model.state == .idle ? 0 : 0.4), radius: 22, y: 12)
         .environment(\.colorScheme, .dark)
         .onTapGesture { controller.open() }
-        .contextMenu { SurfaceMenu(activities: model.activities) }
-        .keyframeAnimator(initialValue: 1.0, trigger: model.activities.completionTick) { view, scale in
+        .contextMenu { SurfaceMenu(controller: controller) }
+        .keyframeAnimator(
+            initialValue: 1.0,
+            trigger: PulseTrigger(completion: model.activities.completionTick, hello: model.helloTick)
+        ) { view, scale in
             view.scaleEffect(scale, anchor: .top)
         } keyframes: { _ in
             SpringKeyframe(1.08, duration: 0.16)
@@ -66,6 +75,21 @@ private struct NotchSurface: View {
         case .glance where !model.activities.items.isEmpty:
             GlanceCard(model: model)
                 .transition(.notchContent)
+        case .onboarding:
+            if let onboarding = model.onboarding {
+                OnboardingHeader(
+                    state: onboarding,
+                    topInset: model.geometry.style == .notch ? model.geometry.notchSize.height : 0
+                )
+                .transition(.notchContent)
+            }
+        case .idle where model.hint != nil:
+            OnboardingHint(
+                text: model.hint ?? "",
+                shortcut: AppSettings.shared.hotkey.displayString,
+                topInset: model.geometry.style == .notch ? model.geometry.notchSize.height : 0
+            )
+            .transition(.notchContent)
         case .idle, .glance:
             IdleActivityContent(model: model)
                 .transition(.notchContent)
@@ -74,13 +98,22 @@ private struct NotchSurface: View {
 }
 
 private struct SurfaceMenu: View {
-    @Bindable var activities: ActivityCenter
+    @Bindable private var settings = AppSettings.shared
+    let controller: NotchController
 
     var body: some View {
-        Toggle("Play Sounds", isOn: $activities.playsSounds)
+        Button("Settings…") { controller.showOnboarding(.settings) }
+        Divider()
+        Toggle("Play Sounds", isOn: $settings.playsSounds)
         Divider()
         Button("Quit Perch") { NSApp.terminate(nil) }
     }
+}
+
+/// Equatable bundle so one keyframe animator pulses for either an activity finishing or the first-run hello.
+private struct PulseTrigger: Equatable {
+    var completion: Int
+    var hello: Int
 }
 
 /// Search field that lives inside the black surface, below the hardware notch.

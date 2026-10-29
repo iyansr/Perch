@@ -7,7 +7,6 @@ final class NotchController {
     let model: NotchModel
     private let panel: NotchPanel
     private let screens = ScreenManager()
-    private var hotkey: HotkeyManager?
     private var monitors: [Any] = []
     /// App that was frontmost when the panel opened; gets the keyboard back on close.
     private var previousApp: NSRunningApplication?
@@ -16,6 +15,7 @@ final class NotchController {
         model = NotchModel(geometry: screens.geometry, activities: activities, search: search)
         panel = NotchPanel(frame: screens.geometry.windowFrame)
         search.index.onUpdate = { [weak self] in self?.model.refreshResults() }
+        search.files.onUpdate = { [weak self] in self?.model.refreshResults() }
     }
 
     func start() {
@@ -31,23 +31,39 @@ final class NotchController {
             updateHover()
         }
 
-        let hotkey = HotkeyManager { [weak self] in self?.toggle() }
-        if !hotkey.register() {
-            NSLog("Perch: ⌥Space is already taken by another app; open Perch by clicking the notch.")
-        }
-        self.hotkey = hotkey
+        HotkeyManager.shared.onPress = { [weak self] in self?.toggle() }
+        observeHotkey()
 
         installEventMonitors()
+
+        if !AppSettings.shared.onboardingDone { beginFirstRun() }
+    }
+
+    /// Registers the configured hotkey and re-registers whenever the setting changes.
+    private func observeHotkey() {
+        let shortcut = withObservationTracking {
+            AppSettings.shared.hotkey
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.observeHotkey() }
+        }
+        if !HotkeyManager.shared.register(shortcut) {
+            NSLog("Perch: \(shortcut.displayString) is already taken by another app; open Perch by clicking the notch.")
+        }
     }
 
     // MARK: Transitions
 
     func toggle() {
-        model.state == .open ? close() : open()
+        switch model.state {
+        case .open: close()
+        case .onboarding: if model.onboarding?.mode == .settings { finishOnboarding() }
+        case .idle, .glance: open()
+        }
     }
 
     func open() {
-        guard model.state != .open else { return }
+        guard model.state != .open, model.state != .onboarding else { return }
+        model.hint = nil
         model.search.index.refreshIfStale()
         model.resetSearch()
         let frontmost = NSWorkspace.shared.frontmostApplication
@@ -87,6 +103,58 @@ final class NotchController {
         updateHover()
     }
 
+    // MARK: Onboarding
+
+    /// First launch: the pill pulses hello, then the card drops from the notch.
+    private func beginFirstRun() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            guard let self, !AppSettings.shared.onboardingDone else { return }
+            model.pulse()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { [weak self] in
+                guard let self, !AppSettings.shared.onboardingDone else { return }
+                showOnboarding(.firstRun)
+            }
+        }
+    }
+
+    /// Drops the onboarding card (first run) or the single settings page (pill menu → Settings…).
+    func showOnboarding(_ mode: OnboardingMode) {
+        guard model.state != .onboarding else { return }
+        if model.state != .open {
+            let frontmost = NSWorkspace.shared.frontmostApplication
+            previousApp = frontmost == .current ? nil : frontmost
+        }
+        model.hint = nil
+        model.onboarding = OnboardingState(mode: mode)
+        panel.makeKeyAndOrderFront(nil)
+        withAnimation(NotchMotion.expand) {
+            model.state = .onboarding
+            model.isHovering = false
+        }
+        updateHover()
+    }
+
+    /// Collapses the card. After the first run it also records completion and shows "Press <hotkey> anytime".
+    func finishOnboarding() {
+        guard model.state == .onboarding else { return }
+        let firstRun = model.onboarding?.mode == .firstRun
+        if firstRun { AppSettings.shared.onboardingDone = true }
+        let hint = "Press \(AppSettings.shared.hotkey.displayString) anytime"
+        withAnimation(NotchMotion.collapse) {
+            model.state = .idle
+            model.isHovering = false
+            if firstRun { model.hint = hint }
+        }
+        if panel.isKeyWindow { returnKeyboardFocus() }
+        updateHover()
+        guard firstRun else { return }
+        // 2 s on screen after the 0.6 s collapse morph.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) { [weak self] in
+            guard let self, model.hint == hint else { return }
+            withAnimation(NotchMotion.collapse) { self.model.hint = nil }
+        }
+    }
+
     /// Gives the keyboard back to the app the user was in, without hiding the panel,
     /// so the collapse morph keeps playing on screen.
     private func returnKeyboardFocus() {
@@ -98,7 +166,7 @@ final class NotchController {
         // Fallback if the panel is still key once the morph is done: re-ordering the
         // idle pill releases key status and is not visible at that point.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) { [weak self] in
-            guard let self, model.state != .open, panel.isKeyWindow else { return }
+            guard let self, model.state != .open, model.state != .onboarding, panel.isKeyWindow else { return }
             panel.orderOut(nil)
             panel.orderFrontRegardless()
         }
@@ -117,6 +185,12 @@ final class NotchController {
         case let .timer(duration):
             model.activities.startTimer(duration: duration)
             close()
+        case let .file(url):
+            close(restoreFocus: false)
+            NSWorkspace.shared.open(url)
+        case .ask:
+            // The Ask AI panel arrives with task 3.4; until then the row is display-only.
+            break
         case let .web(query):
             var components = URLComponents(string: "https://www.google.com/search")
             components?.queryItems = [URLQueryItem(name: "q", value: query)]
@@ -189,7 +263,14 @@ final class NotchController {
             model.moveSelection(by: -1)
             return nil
         case kVK_Return, kVK_ANSI_KeypadEnter:
-            if let result = model.selectedResult { run(result) }
+            if let result = model.selectedResult {
+                if modifiers == .command, case let .file(url) = result {
+                    close(restoreFocus: false)
+                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                } else {
+                    run(result)
+                }
+            }
             return nil
         default:
             break
@@ -216,7 +297,7 @@ final class NotchController {
         panel.ignoresMouseEvents = !inside
 
         switch model.state {
-        case .open:
+        case .open, .onboarding:
             break
         case .idle:
             guard inside != model.isHovering else { return }

@@ -2,7 +2,7 @@ import CoreGraphics
 import Foundation
 import Observation
 
-/// The surface's three states. Every exit returns to `.idle`.
+/// The surface's states. Every exit returns to `.idle`.
 enum NotchState: Equatable {
     /// Ambient pill: hardware notch or island, plus the live-activity slot.
     case idle
@@ -10,6 +10,8 @@ enum NotchState: Equatable {
     case glance
     /// Command panel with search field and results.
     case open
+    /// First-run flow or settings card; the surface is sized like `.open`.
+    case onboarding
 }
 
 /// Size and corner shape of the black surface for the current state.
@@ -27,12 +29,22 @@ final class NotchModel {
     static let searchRowHeight: CGFloat = 44
     static let glanceRowHeight: CGFloat = 52
     static let glanceMaxRows = 3
+    /// Width of the collapsed surface while the post-onboarding hint shows.
+    static let hintWidth: CGFloat = 300
 
     var geometry: NotchGeometry
     var state: NotchState = .idle
     var isHovering = false
     var query = "" {
-        didSet { if query != oldValue { refreshResults() } }
+        didSet {
+            guard query != oldValue else { return }
+            if scope == .all, query.lowercased().hasPrefix("clip ") {
+                query = String(query.dropFirst(5))
+                scope = .clipboard // its didSet refreshes results
+                return
+            }
+            refreshResults()
+        }
     }
     var scope: SearchScope = .all {
         didSet { if scope != oldValue { refreshResults() } }
@@ -41,6 +53,12 @@ final class NotchModel {
     private(set) var results: [SearchResult] = []
     /// Measured height of the results panel; used for click-outside hit testing.
     var panelHeight: CGFloat = 0
+    /// Onboarding / settings flow behind `.onboarding`. Kept after the card closes so its exit transition has content.
+    var onboarding: OnboardingState?
+    /// Short message shown in the collapsed surface (e.g. "Press ⌥Space anytime"); nil when hidden.
+    var hint: String?
+    /// Bumps to play the idle pill's pulse without an activity finishing.
+    private(set) var helloTick = 0
 
     @ObservationIgnored let activities: ActivityCenter
     @ObservationIgnored let search: SearchEngine
@@ -54,6 +72,12 @@ final class NotchModel {
     // MARK: Search
 
     var sectionTitle: String {
+        switch scope {
+        case .clipboard: return "Clipboard"
+        case .files: return "Files"
+        case .ai: return "Ask AI"
+        case .all, .apps: break
+        }
         if !query.trimmingCharacters(in: .whitespaces).isEmpty { return "Top hits" }
         return search.hasRecents ? "Recent" : "Applications"
     }
@@ -78,6 +102,10 @@ final class NotchModel {
         selection = min(max(selection + delta, 0), results.count - 1)
     }
 
+    func pulse() {
+        helloTick += 1
+    }
+
     // MARK: Layout
 
     var shape: ShapeMetrics {
@@ -86,12 +114,12 @@ final class NotchModel {
         let hover: CGFloat = isHovering ? 1 : 0
 
         switch (geometry.style, state) {
-        case (.notch, .open):
+        case (.notch, .open), (.notch, .onboarding):
             return ShapeMetrics(
                 size: CGSize(width: NotchGeometry.panelWidth, height: notch.height + Self.searchRowHeight),
                 top: 0, topRadius: 0, bottomRadius: 22
             )
-        case (.island, .open):
+        case (.island, .open), (.island, .onboarding):
             return ShapeMetrics(
                 size: CGSize(width: NotchGeometry.panelWidth, height: Self.searchRowHeight),
                 top: 8, topRadius: Self.searchRowHeight / 2, bottomRadius: Self.searchRowHeight / 2
@@ -105,6 +133,16 @@ final class NotchModel {
             return ShapeMetrics(
                 size: CGSize(width: 400, height: glanceContentHeight),
                 top: 6, topRadius: 22, bottomRadius: 22
+            )
+        case (.notch, .idle) where hint != nil:
+            return ShapeMetrics(
+                size: CGSize(width: Self.hintWidth, height: notch.height + Self.searchRowHeight),
+                top: 0, topRadius: 0, bottomRadius: 22
+            )
+        case (.island, .idle) where hint != nil:
+            return ShapeMetrics(
+                size: CGSize(width: Self.hintWidth, height: Self.searchRowHeight),
+                top: 8, topRadius: Self.searchRowHeight / 2, bottomRadius: Self.searchRowHeight / 2
             )
         case (.notch, _):
             let ears = activityCount > 0 ? 2 * Self.earWidth : 0
@@ -135,7 +173,7 @@ final class NotchModel {
             width: shape.size.width,
             height: shape.top + shape.size.height
         )
-        if state == .open {
+        if state == .open || state == .onboarding {
             rect = rect.union(CGRect(
                 x: (width - NotchGeometry.panelWidth) / 2,
                 y: panelTop,

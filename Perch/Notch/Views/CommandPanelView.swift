@@ -58,7 +58,7 @@ struct CommandPanelView: View {
     @ViewBuilder
     private var list: some View {
         if model.results.isEmpty {
-            Text(model.query.isEmpty ? "Indexing applications…" : "No results for “\(model.query)”")
+            Text(emptyMessage)
                 .font(.system(size: 14))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity)
@@ -90,6 +90,16 @@ struct CommandPanelView: View {
         }
     }
 
+    private var emptyMessage: String {
+        let hasQuery = !model.query.trimmingCharacters(in: .whitespaces).isEmpty
+        switch model.scope {
+        case .clipboard: return "Clipboard history is empty"
+        case .files: return hasQuery ? "No files match “\(model.query)”" : "Type to search files"
+        case .ai: return "Type a question to ask AI"
+        case .all, .apps: return hasQuery ? "No results for “\(model.query)”" : "Indexing applications…"
+        }
+    }
+
     /// Rows only stagger in as part of the open animation, not while the user types.
     private var isOpening: Bool {
         Date().timeIntervalSince(openedAt) < 0.3
@@ -105,6 +115,10 @@ struct CommandPanelView: View {
                 Text("Move").padding(.trailing, 6)
                 KeyCap("↵")
                 Text("Open").padding(.trailing, 6)
+                if case .file = model.selectedResult {
+                    KeyCap("⌘↵")
+                    Text("Reveal").padding(.trailing, 6)
+                }
                 KeyCap("esc")
                 Text("Close")
             }
@@ -124,8 +138,11 @@ struct CommandPanelView: View {
     }
 
     private func icon(for result: SearchResult) -> NSImage? {
-        if case let .app(app) = result { return model.search.icon(for: app) }
-        return nil
+        switch result {
+        case let .app(app): model.search.icon(for: app)
+        case let .file(url): model.search.fileIcon(for: url)
+        default: nil
+        }
     }
 }
 
@@ -181,6 +198,8 @@ private struct ResultRow: View {
         case .answer: ("equal", Color(red: 0.12, green: 0.62, blue: 0.53))
         case .timer: ("timer", .orange)
         case .web: ("globe", Color(red: 0.04, green: 0.56, blue: 0.84))
+        case .file: ("doc", .gray)
+        case .ask: ("sparkles", .purple)
         }
     }
 }
@@ -207,7 +226,7 @@ private struct RowEntrance: ViewModifier {
 }
 
 /// Behind-window blur that stays active even though Perch never becomes the active app.
-private struct VisualEffectBackground: NSViewRepresentable {
+struct VisualEffectBackground: NSViewRepresentable {
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
         view.material = .popover

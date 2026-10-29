@@ -2,7 +2,7 @@ import AppKit
 
 /// Chips at the top of the command panel; ⌘1… selects by position.
 enum SearchScope: Int, CaseIterable, Identifiable {
-    case all, apps
+    case all, apps, clipboard, files, ai
 
     var id: Int { rawValue }
 
@@ -10,6 +10,9 @@ enum SearchScope: Int, CaseIterable, Identifiable {
         switch self {
         case .all: "All"
         case .apps: "Apps"
+        case .clipboard: "Clipboard"
+        case .files: "Files"
+        case .ai: "AI"
         }
     }
 }
@@ -20,6 +23,10 @@ enum SearchResult: Identifiable, Equatable {
     case answer(expression: String, value: String)
     case timer(TimeInterval)
     case web(String)
+    /// ↵ opens, ⌘↵ reveals in Finder.
+    case file(URL)
+    /// "Ask AI" row.
+    case ask(String)
 
     var id: String {
         switch self {
@@ -27,6 +34,8 @@ enum SearchResult: Identifiable, Equatable {
         case let .answer(expression, _): "answer:\(expression)"
         case let .timer(duration): "timer:\(duration)"
         case let .web(query): "web:\(query)"
+        case let .file(url): "file:\(url.path)"
+        case let .ask(query): "ask:\(query)"
         }
     }
 
@@ -36,6 +45,8 @@ enum SearchResult: Identifiable, Equatable {
         case let .answer(expression, value): "\(expression) = \(value)"
         case let .timer(duration): "Start \(TimerCommand.label(for: duration)) timer"
         case let .web(query): "Search the web for “\(query)”"
+        case let .file(url): url.lastPathComponent
+        case let .ask(query): "Ask AI “\(query)”"
         }
     }
 
@@ -46,6 +57,8 @@ enum SearchResult: Identifiable, Equatable {
         case .answer: "Copy Result"
         case .timer: "Command"
         case .web: "Web Search"
+        case .file: "File"
+        case .ask: "Ask AI"
         }
     }
 }
@@ -55,6 +68,7 @@ final class SearchEngine {
     private static let maxRecents = 8
 
     let index = AppIndex()
+    let files = FileSearch()
     private var icons: [URL: NSImage] = [:]
     private var recentPaths: [String]
 
@@ -67,6 +81,14 @@ final class SearchEngine {
 
     func results(for rawQuery: String, scope: SearchScope) -> [SearchResult] {
         let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        if scope == .files {
+            files.update(query: query)
+            return files.results.map(SearchResult.file)
+        }
+        files.cancel()
+        // Clipboard history arrives with ClipboardStore; the chip shows its empty state until then.
+        if scope == .clipboard { return [] }
+        if scope == .ai { return query.isEmpty ? [] : [.ask(query)] }
         guard !query.isEmpty else {
             let recents = recentApps
             return (recents.isEmpty ? Array(index.apps.prefix(Self.maxRecents)) : recents).map(SearchResult.app)
@@ -108,6 +130,13 @@ final class SearchEngine {
         if let cached = icons[app.url] { return cached }
         let icon = NSWorkspace.shared.icon(forFile: app.url.path)
         icons[app.url] = icon
+        return icon
+    }
+
+    func fileIcon(for url: URL) -> NSImage {
+        if let cached = icons[url] { return cached }
+        let icon = NSWorkspace.shared.icon(forFile: url.path)
+        icons[url] = icon
         return icon
     }
 
