@@ -28,6 +28,9 @@ final class MeetController {
     /// Browsers Perch was refused automation for; not asked again this session, so no repeated prompts.
     private var denied: Set<String> = []
     private var polling = false
+    /// The last queued script run. Polls and presses run one after another, so a poll started after a
+    /// press reads the state the press left, and two quick presses cannot interleave.
+    private var lastScript: Task<Void, Never>?
 
     var anyBrowserRunning: Bool {
         Self.browsers.contains { isRunning($0.bundleID) }
@@ -41,12 +44,20 @@ final class MeetController {
             return
         }
         polling = true
-        Task { [weak self] in
+        enqueue { [weak self] in
             let (result, newlyDenied) = await Self.scan(browsers)
             guard let self else { return }
             polling = false
             denied.formUnion(newlyDenied)
             completion(result)
+        }
+    }
+
+    private func enqueue(_ work: @escaping @MainActor () async -> Void) {
+        let previous = lastScript
+        lastScript = Task {
+            await previous?.value
+            await work()
         }
     }
 
@@ -83,7 +94,7 @@ final class MeetController {
         default: return
         }
         let browsers = Self.browsers.filter { isRunning($0.bundleID) && !denied.contains($0.bundleID) }
-        Task { await Self.press(browsers, javascript: javascript) }
+        enqueue { await Self.press(browsers, javascript: javascript) }
     }
 
     /// Lets a user who fixed the permission or setting retry.
