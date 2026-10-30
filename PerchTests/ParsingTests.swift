@@ -70,3 +70,26 @@ struct UnitConverterTests {
         #expect(UnitConverter.convert("5 foo to mi") == nil)
     }
 }
+
+struct PerchCommandTests {
+    @Test func matchesTitleAndAliases() {
+        #expect(PerchCommand.matches("clipboard").first == .clipboardHistory)
+        #expect(PerchCommand.matches("clip").first == .clipboardHistory)
+        #expect(PerchCommand.matches("preferences").first == .settings)
+        #expect(PerchCommand.matches("exit").first == .quit)
+    }
+
+    @Test func exactTitleOutranksFuzzyMatches() {
+        #expect(PerchCommand.matches("settings").first == .settings)
+        #expect(PerchCommand.matches("search files").first == .searchFiles)
+    }
+
+    @Test func unrelatedQueryMatchesNothing() {
+        #expect(PerchCommand.matches("zzqx").isEmpty)
+    }
+
+    /// "pr" spells across "Quit Perch" only as a subsequence; ↵ on it must not quit the app.
+    @Test func looseSubsequenceDoesNotMatch() {
+        #expect(!PerchCommand.matches("pr").contains(.quit))
+    }
+}

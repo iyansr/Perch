@@ -1,19 +1,86 @@
 import AppKit
 
-/// Chips at the top of the command panel; ⌘1… selects by position.
-enum SearchScope: Int, CaseIterable, Identifiable {
-    case all, apps, clipboard, files
+/// What the search field searches. `.root` is the single launcher list (apps, commands, answers);
+/// commands such as Clipboard History push the other modes.
+enum SearchMode: Equatable {
+    case root, clipboard, files
 
-    var id: Int { rawValue }
+    /// Tag shown in front of the search field while a command is open.
+    var title: String? {
+        switch self {
+        case .root: nil
+        case .clipboard: PerchCommand.clipboardHistory.title
+        case .files: PerchCommand.searchFiles.title
+        }
+    }
+
+    var placeholder: String {
+        switch self {
+        case .root: "Search for apps and commands…"
+        case .clipboard: "Search clipboard history…"
+        case .files: "Search files…"
+        }
+    }
+}
+
+/// Built-in commands, listed under "Commands" in the root list.
+enum PerchCommand: CaseIterable {
+    case clipboardHistory, searchFiles, settings, quit
 
     var title: String {
         switch self {
-        case .all: "All"
-        case .apps: "Apps"
-        case .clipboard: "Clipboard"
-        case .files: "Files"
+        case .clipboardHistory: "Clipboard History"
+        case .searchFiles: "Search Files"
+        case .settings: "Settings"
+        case .quit: "Quit Perch"
         }
     }
+
+    var symbol: String {
+        switch self {
+        case .clipboardHistory: "doc.on.clipboard"
+        case .searchFiles: "doc.text.magnifyingglass"
+        case .settings: "gearshape"
+        case .quit: "power"
+        }
+    }
+
+    /// Other words people type for the command; matched like the title.
+    private var aliases: [String] {
+        switch self {
+        case .clipboardHistory: ["clip", "paste", "copy history"]
+        case .searchFiles: ["find files", "open file", "documents"]
+        case .settings: ["preferences", "hotkey", "shortcut"]
+        case .quit: ["exit", "close perch"]
+        }
+    }
+
+    /// Prepared once; matched on every keystroke.
+    private static let names: [(PerchCommand, [FuzzyName])] = allCases.map { command in
+        (command, ([command.title] + command.aliases).map(FuzzyName.init))
+    }
+
+    /// Commands matching `query` (lowercased), best first. Loose subsequence hits are left out, so a short
+    /// query that happens to spell across "Quit Perch" never puts it under the cursor.
+    static func matches(_ query: String) -> [PerchCommand] {
+        names
+            .compactMap { command, names in
+                names.compactMap { $0.score(for: query) }.max().map { (command, $0) }
+            }
+            .filter { $0.1 >= 500 }
+            .sorted { $0.1 > $1.1 }
+            .map(\.0)
+    }
+}
+
+/// Header a run of rows sits under in the results list.
+enum ResultSection: String {
+    case results = "Results"
+    case applications = "Applications"
+    case commands = "Commands"
+    case web = "Web"
+    case files = "Files"
+    case clipboard = "Clipboard"
 }
 
 enum SearchResult: Identifiable, Equatable {
@@ -26,6 +93,7 @@ enum SearchResult: Identifiable, Equatable {
     case file(URL)
     /// Clipboard history row; ↵ pastes, ⌘↵ copies.
     case clip(ClipboardItem)
+    case command(PerchCommand)
 
     var id: String {
         switch self {
@@ -35,6 +103,7 @@ enum SearchResult: Identifiable, Equatable {
         case let .web(query): "web:\(query)"
         case let .file(url): "file:\(url.path)"
         case let .clip(item): "clip:\(item.id)"
+        case let .command(command): "command:\(command)"
         }
     }
 
@@ -46,6 +115,7 @@ enum SearchResult: Identifiable, Equatable {
         case let .web(query): "Search the web for “\(query)”"
         case let .file(url): url.lastPathComponent
         case let .clip(item): item.previewText
+        case let .command(command): command.title
         }
     }
 
@@ -58,6 +128,18 @@ enum SearchResult: Identifiable, Equatable {
         case .web: "Web Search"
         case .file: "File"
         case .clip(let item): item.kindLabel
+        case .command: "Command"
+        }
+    }
+
+    var section: ResultSection {
+        switch self {
+        case .answer, .timer: .results
+        case .app: .applications
+        case .command: .commands
+        case .web: .web
+        case .file: .files
+        case .clip: .clipboard
         }
     }
 
@@ -69,6 +151,8 @@ enum SearchResult: Identifiable, Equatable {
         case .timer: "Start Timer"
         case .web: "Search Web"
         case .clip: "Paste"
+        case .command(.quit): "Quit"
+        case .command: "Open Command"
         }
     }
 }
@@ -87,50 +171,47 @@ final class SearchEngine {
         index.refreshIfStale()
     }
 
-    var hasRecents: Bool { !recentApps.isEmpty }
-
     /// Work the user is waiting on: a Spotlight file query, or the first app scan (later rescans keep old results).
     var isBusy: Bool {
         files.isSearching || (index.isScanning && index.apps.isEmpty)
     }
 
-    func results(for rawQuery: String, scope: SearchScope) -> [SearchResult] {
+    /// Root results are grouped by `SearchResult.section`, in the order the list shows them:
+    /// answers, applications, commands, then the web fallback. An empty query lists recent apps and every command.
+    func results(for rawQuery: String, mode: SearchMode) -> [SearchResult] {
         let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        if scope == .files {
+        if mode == .files {
             files.update(query: query)
             return files.results.map(SearchResult.file)
         }
         files.cancel()
-        if scope == .clipboard {
+        if mode == .clipboard {
             return ClipboardStore.shared.search(query, filter: ClipboardPanelState.shared.filter).map(SearchResult.clip)
         }
         guard !query.isEmpty else {
-            let recents = recentApps
-            return (recents.isEmpty ? Array(index.apps.prefix(Self.maxRecents)) : recents).map(SearchResult.app)
+            let recents = recentPaths.compactMap { path in index.apps.first { $0.url.path == path } }
+            let apps = recents.isEmpty ? Array(index.apps.prefix(Self.maxRecents)) : recents
+            return apps.map(SearchResult.app) + PerchCommand.allCases.map(SearchResult.command)
         }
 
         var results: [SearchResult] = []
-        if scope == .all {
-            if let duration = TimerCommand.parse(query) {
-                results.append(.timer(duration))
-            }
-            if let converted = UnitConverter.convert(query) {
-                let value = Calculator.format(converted.value, maxFractionDigits: 4)
-                results.append(.answer(expression: query, value: "\(value) \(converted.symbol)"))
-            } else if let value = Calculator.evaluate(query) {
-                results.append(.answer(expression: query, value: Calculator.format(value)))
-            }
+        if let duration = TimerCommand.parse(query) {
+            results.append(.timer(duration))
+        }
+        if let converted = UnitConverter.convert(query) {
+            let value = Calculator.format(converted.value, maxFractionDigits: 4)
+            results.append(.answer(expression: query, value: "\(value) \(converted.symbol)"))
+        } else if let value = Calculator.evaluate(query) {
+            results.append(.answer(expression: query, value: Calculator.format(value)))
         }
 
         let lower = query.lowercased()
         let ranked = index.apps
             .compactMap { app in app.score(for: lower).map { (app, $0 + recencyBoost(for: app)) } }
             .sorted { $0.1 != $1.1 ? $0.1 > $1.1 : $0.0.name < $1.0.name }
-        results += ranked.prefix(scope == .apps ? 40 : 8).map { .app($0.0) }
-
-        if scope == .all {
-            results.append(.web(query))
-        }
+        results += ranked.prefix(8).map { .app($0.0) }
+        results += PerchCommand.matches(lower).map(SearchResult.command)
+        results.append(.web(query))
         return results
     }
 
@@ -153,10 +234,6 @@ final class SearchEngine {
         let icon = NSWorkspace.shared.icon(forFile: url.path)
         icons[url] = icon
         return icon
-    }
-
-    private var recentApps: [AppEntry] {
-        recentPaths.compactMap { path in index.apps.first { $0.url.path == path } }
     }
 
     private func recencyBoost(for app: AppEntry) -> Int {

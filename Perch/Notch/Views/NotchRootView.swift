@@ -6,8 +6,8 @@ import SwiftUI
 struct NotchRootView: View {
     let model: NotchModel
     let controller: NotchController
-    /// Follows `model.showsResults`, flipped inside `withAnimation` so typing the first character
-    /// drops the panel in (and clearing the query lifts it out) instead of popping.
+    /// Follows `model.showsResults`, flipped inside `withAnimation` so the results panel drops in
+    /// when search opens (and lifts out when it closes) instead of popping.
     @State private var resultsVisible = false
 
     var body: some View {
@@ -69,10 +69,10 @@ private struct NotchSurface: View {
                 .padding(.horizontal, shape.shoulder) // shoulders sit outside the content width
         }
         .clipShape(outline)
+        // Always mounted so the rim morphs with the outline; inserting it mid-morph made it slide in from the side.
         .overlay {
-            if open {
-                outline.strokeBorder(rim(solid: solid), lineWidth: 1)
-            }
+            outline.strokeBorder(rim(solid: solid), lineWidth: 1)
+                .opacity(open ? 1 : 0)
         }
         .background {
             ZStack {
@@ -238,15 +238,25 @@ private struct SearchFieldRow: View {
     private static let font = Font.system(size: 20, weight: .regular)
 
     var body: some View {
-        // Scope chips can show results for an empty query; the hint and icon wait for typed text,
+        // A command's list shows for an empty query; the hint and icon wait for typed text,
         // so they never sit on top of the placeholder.
         let hasQuery = !model.query.trimmingCharacters(in: .whitespaces).isEmpty
         let selected = model.showsResults && hasQuery ? model.selectedResult : nil
         HStack(spacing: 12) {
+            if let title = model.mode.title {
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .padding(.horizontal, 10)
+                    .frame(height: 26)
+                    .background(Capsule().fill(.white.opacity(0.14)))
+                    .fixedSize()
+                    .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .leading)))
+            }
             TextField(
                 "Search",
                 text: $model.query,
-                prompt: Text("Search apps, calculate, or t 25m").foregroundStyle(.white.opacity(0.4))
+                prompt: Text(model.mode.placeholder).foregroundStyle(.white.opacity(0.4))
             )
             .textFieldStyle(.plain)
             .font(Self.font)
@@ -268,6 +278,7 @@ private struct SearchFieldRow: View {
             }
         }
         .animation(.easeOut(duration: 0.15), value: selected?.id)
+        .animation(.easeOut(duration: 0.15), value: model.mode)
         .padding(.leading, 24)
         .padding(.trailing, 18)
         .frame(height: NotchModel.openRowHeight)

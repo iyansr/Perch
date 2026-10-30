@@ -104,14 +104,13 @@ final class NotchController {
     }
 
     /// Opens the command panel. From Home it keeps the app captured when Home opened and remembers to return there.
-    func open(scope: SearchScope = .all) {
+    func open(mode: SearchMode = .root) {
         guard model.state != .open, model.state != .onboarding, model.state != .dropZone else { return }
         model.searchReturnsHome = model.state == .home
         model.hint = nil
         model.search.index.refreshIfStale()
         ClipboardPanelState.shared.reset()
-        model.resetSearch()
-        model.scope = scope
+        model.resetSearch(mode: mode)
         if !model.searchReturnsHome {
             let frontmost = NSWorkspace.shared.frontmostApplication
             previousApp = frontmost == .current ? nil : frontmost
@@ -250,7 +249,29 @@ final class NotchController {
             components?.queryItems = [URLQueryItem(name: "q", value: query)]
             close(restoreFocus: false)
             if let url = components?.url { NSWorkspace.shared.open(url) }
+        case let .command(command):
+            run(command)
         }
+    }
+
+    private func run(_ command: PerchCommand) {
+        switch command {
+        case .clipboardHistory:
+            ClipboardPanelState.shared.reset()
+            model.push(.clipboard)
+        case .searchFiles:
+            model.push(.files)
+        case .settings:
+            showOnboarding(.settings)
+        case .quit:
+            NSApp.terminate(nil)
+        }
+    }
+
+    /// Leaves a command's mode for the root list (esc, or ⌫ on an empty query).
+    private func popToRoot() {
+        ClipboardPanelState.shared.reset()
+        model.popToRoot()
     }
 
     // MARK: Clipboard
@@ -260,7 +281,7 @@ final class NotchController {
         let state = ClipboardPanelState.shared
         state.onFilterChange = { [weak self] in self?.model.refreshResults() }
         state.observeStore { [weak self] in
-            guard let self, model.state == .open, model.scope == .clipboard else { return }
+            guard let self, model.state == .open, model.mode == .clipboard else { return }
             model.refreshResults(keepingSelection: true)
         }
     }
@@ -441,21 +462,29 @@ final class NotchController {
         if model.state == .home, event.window === panel { return handleHomeKey(event) }
         guard model.state == .open, event.window === panel else { return event }
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        if model.scope == .clipboard, handleClipboardKey(event, modifiers) { return nil }
+        if model.mode == .clipboard, handleClipboardKey(event, modifiers) { return nil }
 
         switch Int(event.keyCode) {
         case kVK_Escape:
-            if model.searchReturnsHome { returnHome() } else { close() }
+            if model.mode != .root, model.modeReturnsToRoot {
+                popToRoot()
+            } else if model.searchReturnsHome {
+                returnHome()
+            } else {
+                close()
+            }
             return nil
-        case kVK_DownArrow where model.showsResults:
+        case kVK_Delete where model.mode != .root && model.query.isEmpty:
+            popToRoot()
+            return nil
+        case kVK_DownArrow:
             model.moveSelection(by: 1)
             return nil
-        case kVK_UpArrow where model.showsResults:
+        case kVK_UpArrow:
             model.moveSelection(by: -1)
             return nil
         case kVK_Return, kVK_ANSI_KeypadEnter:
-            // Nothing to run until the results panel is on screen.
-            if model.showsResults, let result = model.selectedResult {
+            if let result = model.selectedResult {
                 if modifiers == .command, case let .file(url) = result {
                     close(restoreFocus: false)
                     NSWorkspace.shared.activateFileViewerSelecting([url])
@@ -466,13 +495,6 @@ final class NotchController {
             return nil
         default:
             break
-        }
-
-        if modifiers == .command,
-           let digit = event.charactersIgnoringModifiers.flatMap(Int.init),
-           let scope = SearchScope(rawValue: digit - 1) {
-            model.scope = scope
-            return nil
         }
         return event
     }

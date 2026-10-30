@@ -56,17 +56,18 @@ final class NotchModel {
     var query = "" {
         didSet {
             guard query != oldValue else { return }
-            if scope == .all, query.lowercased().hasPrefix("clip ") {
-                query = String(query.dropFirst(5))
-                scope = .clipboard // its didSet refreshes results
-                return
+            if mode == .root, query.lowercased().hasPrefix("clip ") {
+                mode = .clipboard
+                modeReturnsToRoot = true
+                query = String(query.dropFirst(5)) // no observer re-entry inside didSet
             }
             refreshResults()
         }
     }
-    var scope: SearchScope = .all {
-        didSet { if scope != oldValue { refreshResults() } }
-    }
+    /// Root list, or the command the user opened from it (Clipboard History, Search Files).
+    private(set) var mode: SearchMode = .root
+    /// The mode was opened from the root list, so esc steps back there instead of leaving search.
+    private(set) var modeReturnsToRoot = false
     var selection = 0
     private(set) var results: [SearchResult] = []
     /// Search work still in flight (Spotlight query, first app scan); drives the circulating glow.
@@ -101,42 +102,47 @@ final class NotchModel {
 
     // MARK: Search
 
-    var sectionTitle: String {
-        switch scope {
-        case .clipboard: return "Clipboard"
-        case .files: return "Files"
-        case .all, .apps: break
-        }
-        if !query.trimmingCharacters(in: .whitespaces).isEmpty { return "Top hits" }
-        return search.hasRecents ? "Recent" : "Applications"
-    }
-
     var selectedResult: SearchResult? {
         results.indices.contains(selection) ? results[selection] : nil
     }
 
-    /// The results panel stays hidden on open until the user types or picks a scope (e.g. via "clip " or ⌘2).
+    /// The results panel drops in as soon as search opens, listing recent apps and commands before any typing.
     var showsResults: Bool {
-        state == .open && (scope != .all || !query.trimmingCharacters(in: .whitespaces).isEmpty)
+        state == .open
     }
 
-    func resetSearch() {
-        query = ""
-        scope = .all
-        refreshResults()
+    /// Fresh search in `mode`, as when the panel opens.
+    func resetSearch(mode: SearchMode = .root) {
+        setMode(mode, returnsToRoot: false)
+    }
+
+    /// Opens a command's mode from the root list.
+    func push(_ mode: SearchMode) {
+        setMode(mode, returnsToRoot: true)
+    }
+
+    func popToRoot() {
+        setMode(.root, returnsToRoot: false)
+    }
+
+    /// Clears the query and refreshes once for the new mode.
+    private func setMode(_ newMode: SearchMode, returnsToRoot: Bool) {
+        mode = newMode
+        modeReturnsToRoot = returnsToRoot
+        if query.isEmpty { refreshResults() } else { query = "" }
     }
 
     /// - Parameter keepingSelection: after a store change, stay on the same row when it still exists.
     func refreshResults(keepingSelection: Bool = false) {
         let previous = keepingSelection ? selectedResult?.id : nil
-        results = search.results(for: query, scope: scope)
+        results = search.results(for: query, mode: mode)
         isLoading = search.isBusy
         selection = previous.flatMap { id in results.firstIndex { $0.id == id } } ?? defaultSelection
     }
 
     /// Clipboard lands on the newest unpinned row, below the "Pinned" header; everything else on the first row.
     private var defaultSelection: Int {
-        guard scope == .clipboard else { return 0 }
+        guard mode == .clipboard else { return 0 }
         return results.firstIndex { result in
             if case let .clip(item) = result { !item.isPinned } else { false }
         } ?? 0

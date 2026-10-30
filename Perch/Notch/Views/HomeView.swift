@@ -216,7 +216,7 @@ private struct ClipboardModule: View {
         let enabled = AppSettings.shared.clipboardEnabled
         let _ = store.revision // re-read when the history changes
         let item = enabled ? store.newest() : nil
-        Button { controller.open(scope: .clipboard) } label: {
+        Button { controller.open(mode: .clipboard) } label: {
             VStack(alignment: .leading, spacing: 0) {
                 ModuleHeader(title: "Clipboard", showsChevron: true)
                 if let item {

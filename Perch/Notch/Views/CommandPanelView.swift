@@ -1,7 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// Frosted results panel under the open surface: chips, results, key hints.
+/// Frosted results panel under the open surface, Tinycast-style: one sectioned list and an action bar.
+/// Clipboard History swaps in its split view and footer.
 struct CommandPanelView: View {
     @Bindable var model: NotchModel
     let controller: NotchController
@@ -9,22 +10,15 @@ struct CommandPanelView: View {
     @State private var openedAt = Date()
 
     private static let rowHeight: CGFloat = 36
-    private static let rowSpacing: CGFloat = 0
+    private static let headerHeight: CGFloat = 28
     private static let maxListHeight: CGFloat = 360
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            chips
-            if model.scope == .clipboard {
+            if model.mode == .clipboard {
                 ClipboardListView(model: model, controller: controller)
                 ClipboardFooter(model: model, controller: controller)
             } else {
-                Text(model.sectionTitle)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 10)
-                    .padding(.top, 4)
-                    .padding(.bottom, 6)
                 list
                 footer
             }
@@ -43,23 +37,6 @@ struct CommandPanelView: View {
         .onGeometryChange(for: CGFloat.self, of: \.size.height) { model.panelHeight = $0 }
     }
 
-    private var chips: some View {
-        HStack(spacing: 6) {
-            ForEach(SearchScope.allCases) { scope in
-                let selected = scope == model.scope
-                Button(scope.title) { model.scope = scope }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 13, weight: .medium))
-                    .padding(.horizontal, 13)
-                    .frame(height: 30)
-                    .foregroundStyle(selected ? Color(nsColor: .windowBackgroundColor) : .primary)
-                    .background(Capsule().fill(selected ? Color.primary : Color.primary.opacity(0.06)))
-            }
-        }
-        .padding(.horizontal, 2)
-        .padding(.bottom, 10)
-    }
-
     @ViewBuilder
     private var list: some View {
         if model.results.isEmpty {
@@ -71,8 +48,11 @@ struct CommandPanelView: View {
         } else {
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(spacing: Self.rowSpacing) {
+                    LazyVStack(spacing: 0) {
                         ForEach(Array(model.results.enumerated()), id: \.element.id) { index, result in
+                            if index == 0 || model.results[index - 1].section != result.section {
+                                sectionHeader(result.section)
+                            }
                             ResultRow(
                                 result: result,
                                 icon: model.icon(for: result),
@@ -95,12 +75,21 @@ struct CommandPanelView: View {
         }
     }
 
+    private func sectionHeader(_ section: ResultSection) -> some View {
+        Text(section.rawValue)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 10)
+            .padding(.bottom, 6)
+            .frame(maxWidth: .infinity, minHeight: Self.headerHeight, maxHeight: Self.headerHeight, alignment: .bottomLeading)
+    }
+
     private var emptyMessage: String {
         let hasQuery = !model.query.trimmingCharacters(in: .whitespaces).isEmpty
-        switch model.scope {
+        switch model.mode {
         case .clipboard: return "" // ClipboardListView draws its own empty states
         case .files: return hasQuery ? "No files match “\(model.query)”" : "Type to search files"
-        case .all, .apps: return hasQuery ? "No results for “\(model.query)”" : "Indexing applications…"
+        case .root: return hasQuery ? "No results for “\(model.query)”" : "Indexing applications…"
         }
     }
 
@@ -109,26 +98,26 @@ struct CommandPanelView: View {
         Date().timeIntervalSince(openedAt) < 0.3
     }
 
+    /// Action bar: navigation on the left; the ↵ action, secondary chords and esc on the right.
     private var footer: some View {
-        HStack {
-            Text(model.results.count == 1 ? "1 result" : "\(model.results.count) results")
-                .lineLimit(1)
-                .layoutPriority(-1)
-            Spacer(minLength: 8)
+        HStack(spacing: 10) {
             HStack(spacing: 4) {
                 KeyCap("↑")
                 KeyCap("↓")
-                Text("Move").padding(.trailing, 6)
-                KeyCap("↵")
-                Text(model.selectedResult?.actionTitle ?? "Open").padding(.trailing, 6)
-                if case .file = model.selectedResult {
-                    KeyCap("⌘↵")
-                    Text("Reveal").padding(.trailing, 6)
-                }
-                KeyCap("esc")
-                Text(model.searchReturnsHome ? "Home" : "Close")
+                Text("Move")
             }
-            .fixedSize()
+            .lineLimit(1)
+            .layoutPriority(-1)
+            Spacer(minLength: 8)
+            if case .file = model.selectedResult {
+                action("Reveal in Finder", "⌘↵")
+                separator
+            }
+            if let selected = model.selectedResult {
+                action(selected.actionTitle, "↵", primary: true)
+                separator
+            }
+            action(escapeTitle, "esc")
         }
         .font(.system(size: 12))
         .foregroundStyle(.secondary)
@@ -139,9 +128,31 @@ struct CommandPanelView: View {
         .padding(.top, 8)
     }
 
+    private func action(_ title: String, _ keys: String, primary: Bool = false) -> some View {
+        HStack(spacing: 6) {
+            Text(title)
+                .fontWeight(primary ? .semibold : .regular)
+                .foregroundStyle(primary ? .primary : .secondary)
+            KeyCap(keys)
+        }
+        .fixedSize()
+    }
+
+    private var separator: some View {
+        Rectangle()
+            .fill(Color.primary.opacity(0.15))
+            .frame(width: 1, height: 14)
+    }
+
+    private var escapeTitle: String {
+        if model.mode != .root, model.modeReturnsToRoot { return "Back" }
+        return model.searchReturnsHome ? "Home" : "Close"
+    }
+
     private var listHeight: CGFloat {
-        let count = CGFloat(model.results.count)
-        return min(Self.maxListHeight, count * Self.rowHeight + max(0, count - 1) * Self.rowSpacing)
+        let results = model.results
+        let headers = results.indices.filter { $0 == 0 || results[$0 - 1].section != results[$0].section }.count
+        return min(Self.maxListHeight, CGFloat(results.count) * Self.rowHeight + CGFloat(headers) * Self.headerHeight)
     }
 }
 
@@ -219,6 +230,7 @@ struct ResultIcon: View {
         case .web: ("globe", Color(red: 0.04, green: 0.56, blue: 0.84))
         case .file: ("doc", .gray)
         case .clip: ("doc.on.clipboard", .gray)
+        case let .command(command): (command.symbol, .gray)
         }
     }
 }

@@ -3,17 +3,31 @@ import AppKit
 nonisolated struct AppEntry: Identifiable, Hashable, Sendable {
     let url: URL
     let name: String
-    let lowerName: String
-    /// Lowercased words, split on spaces, dashes, dots and camel-case humps ("VS Code" → ["vs", "code"]).
-    let words: [String]
-    /// First letter of each word ("Visual Studio Code" → "vsc").
-    let initials: String
+    let match: FuzzyName
 
     var id: URL { url }
 
     init(url: URL, name: String) {
         self.url = url
         self.name = name
+        match = FuzzyName(name)
+    }
+
+    /// Higher is better; nil means no match. `query` must be lowercased.
+    func score(for query: String) -> Int? {
+        match.score(for: query)
+    }
+}
+
+/// A name prepared for launcher-style matching: exact, prefix, word prefix, initials, substring, then fuzzy.
+nonisolated struct FuzzyName: Hashable, Sendable {
+    let lowerName: String
+    /// Lowercased words, split on spaces, dashes, dots and camel-case humps ("VS Code" → ["vs", "code"]).
+    let words: [String]
+    /// First letter of each word ("Visual Studio Code" → "vsc").
+    let initials: String
+
+    init(_ name: String) {
         lowerName = name.lowercased()
         words = Self.splitWords(name)
         initials = String(words.compactMap(\.first))

@@ -14,13 +14,13 @@ Commit `60fc978` (scaffold) builds clean (`xcodebuild -scheme Perch`, Debug). Mo
 | Global hotkey | Partial: fixed ⌥Space, no user choice | `Hotkey/HotkeyManager.swift` |
 | App search, ↑↓ ↵ esc, click-outside close, recents | Done | `Search/AppIndex.swift`, `SearchEngine.swift` |
 | Inline math + units, web fallback | Done | `Search/Calculator.swift`, `UnitConverter.swift` |
-| Chips | Done: All, Apps, Clipboard, Files (AI chip removed, decision 11) | `SearchScope` in `SearchEngine.swift`, `Search/FileSearch.swift` |
+| Search modes (chips replaced, decision 12) | Done: one sectioned root list; Commands open Clipboard History and Search Files | `SearchMode`, `PerchCommand` in `SearchEngine.swift`, `Search/FileSearch.swift` |
 | ActivityCenter + timer (`t 25m`), pause/resume, 8 s auto-dismiss, sound toggle | Done | `Activities/*` |
 | F2 Clipboard, F4 Drop-to-convert | Code + unit tests done; manual exit checks (J3, J4, Finder drag) pending | `Clipboard/*`, `Convert/*`, `Notch/DropZoneController.swift` |
 | F6 Agents: `perch` CLI, socket bridge, hook installer, terminal focus | Code + unit tests done; verified with a real `claude -p` session through Perch hooks; J6 tab focus and "connect on this machine" pending | `PerchCLI/`, `Shared/AgentEvent.swift`, `Agents/*` |
 | F5 Ask AI | Dropped from v0.1 (decision 11); the AI chip is removed too | — |
 | J1 Onboarding, hotkey recorder, settings | Done; step 3 (agents) added | `Onboarding/*`, `Hotkey/*`, `App/AppSettings.swift` |
-| Unit test target | Done (`PerchTests`, 95 tests) | `PerchTests/` |
+| Unit test target | Done (`PerchTests`, 99 tests) | `PerchTests/` |
 | Signing, notarization, Sparkle, DMG | Not started | — |
 
 Project facts: macOS 14 target, no sandbox, hardened runtime on, `LSUIElement = YES`, default actor isolation `MainActor`, file-system-synchronized groups (new files under `Perch/` join the target automatically). Targets: `Perch` (app), `PerchCLI` (product `perch`, module `PerchCLI` so it does not clash with `Perch` on a case-insensitive disk), `PerchTests`. `Shared/` is compiled into both the app and the CLI. SPM: GRDB, libwebp. `Perch.entitlements` carries `com.apple.security.automation.apple-events`.
@@ -33,13 +33,14 @@ Facts below came from inspecting this machine (Claude Code 2.1.312, codex-cli 0.
 2. **Codex supports hooks now.** `~/.codex/hooks.json` uses the same schema as Claude Code hooks, including the PascalCase event names (`SessionStart`, `PermissionRequest`, `Stop`, …; checked against captured payloads). The `notify` program in `config.toml` only fires on turn completion. Plan: connect Codex through `hooks.json`, so "needs input" works for both agents. The `notify` path is dropped. Codex runs a new hook only after the user approves it in Codex; it records approval in `config.toml` as `[hooks.state."<hooks.json>:<event>:<group>:<hook>"]`. Perch never writes those entries, appends its group after existing ones (so other tools' indexes do not shift), and shows "Open Codex and approve Perch's hooks" until the entries appear.
 3. **Claude Code "needs input" uses `PermissionRequest`.** Claude Code has a dedicated `PermissionRequest` hook, plus `Notification` for idle prompts. Plan: subscribe to `SessionStart`, `UserPromptSubmit`, `PermissionRequest`, `Notification`, `PostToolUse` (clears needs-input after approval), `Stop`, `StopFailure`, `SessionEnd`.
 4. **Decide — CLI name.** The PRD says `notch event` / `notch watch`. Plan uses `perch` to match the app and avoid collisions with other notch apps.
-5. **Decide — ⌘-digit chip order.** F1 lists chips `All, Apps, Clipboard, Files, AI` (Clipboard = ⌘3). J3 says ⌘2 opens Clipboard. Plan keeps the F1 order without AI; J3 and the demo script are updated to ⌘3.
+5. ~~**Decide — ⌘-digit chip order.**~~ Superseded by decision 12: there are no chips or ⌘-digit shortcuts.
 6. **Clipboard storage:** GRDB via SPM, as in the PRD. Image payloads are stored as files under Application Support, not as blobs, to keep the DB small and queries fast.
 7. **Hotkey:** keep the Carbon `HotkeyManager` and add a small in-app recorder. The KeyboardShortcuts package is not needed.
 8. **Hooks are guarded.** Every hook command written to an agent config is a no-op when Perch is not installed. This matches how other tools on this machine write hooks (`[ -x … ] && … || true`). Uninstalling Perch never breaks an agent.
 9. **`SessionStart` only tracks the session.** A freshly opened agent waiting for its first prompt is not "running", so `SessionStart` shows nothing; the first `UserPromptSubmit` creates the row.
 10. **Codex `Interrupt` ends a turn.** Codex has no `Notification` / `StopFailure`; its `Interrupt` event (the user cancelled a turn) maps to done, so the row does not spin until the 30 min timeout.
 11. **Ask AI (F5) is dropped from v0.1.** Removed with it: the AI chip, the `.ask` result, Tab-to-ask, the onboarding/settings key step, Keychain storage and the `aiProvider` setting. The demo and acceptance matrix skip J5 / F5-a.
+12. **Chips are replaced by one list and commands (Tinycast/Raycast layout).** The root search shows one list grouped under section headers (Results, Applications, Commands, Web) with a right-aligned kind label and a footer action bar (`↵` primary action, `⌘↵` Reveal in Finder for files, esc). Built-in commands — Clipboard History, Search Files, Settings, Quit Perch — are matched like apps (title plus aliases, no loose subsequence hits). Clipboard History and Search Files push a mode, shown as a tag in front of the search field; esc or ⌫ on an empty query returns to the root list. The Home Clipboard module opens Clipboard History directly, so esc there returns Home. `clip ` still jumps to Clipboard History. The list shows as soon as search opens: with an empty query it lists recent apps (or the first apps found) and every command.
 
 ## 2. Architecture additions
 
@@ -63,7 +64,7 @@ PerchTests/       unit tests; Fixtures/ holds hook payloads captured from Claude
 
 ### Shared contracts
 
-**`SearchScope`** is `all, apps, clipboard, files`. ⌘1–⌘4 map by `rawValue`. (An `ai` chip existed until Ask AI was dropped.)
+**`SearchMode`** is `root, clipboard, files`. `root` lists apps, `PerchCommand`s, answers and the web fallback; the commands push the other two modes. (Chips and ⌘1–⌘4 existed until decision 12; an `ai` chip existed until Ask AI was dropped.)
 
 **`SearchResult`** gains:
 - `.clip(ClipboardItem)`: ↵ pastes, ⌘↵ copies.
