@@ -17,7 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let activities = ActivityCenter()
-        let controller = NotchController(activities: activities, search: SearchEngine())
+        let controller = NotchController(activities: activities, search: .shared)
         controller.start()
         self.controller = controller
         ClipboardMonitor.shared.start()
@@ -48,7 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         // Allow / Deny on a permission card: sessions flip the row, the bridge answers the waiting `perch event --await`.
         sessions.reply = { request, allow in bridge.reply(request: request, allow: allow) }
-        DecisionRouter.shared.onAnswer = { id, accepted in sessions.answer(request: id, allow: accepted) }
+        DecisionRouter.shared.register(owner: "agent") { id, accepted in sessions.answer(request: id, allow: accepted) }
         do {
             try bridge.start()
         } catch {

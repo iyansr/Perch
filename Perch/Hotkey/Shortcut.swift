@@ -28,13 +28,16 @@ struct Shortcut: Codable, Equatable {
         return UInt32(result)
     }
 
-    var displayString: String {
-        var text = ""
-        if carbonModifiers & UInt32(controlKey) != 0 { text += "⌃" }
-        if carbonModifiers & UInt32(optionKey) != 0 { text += "⌥" }
-        if carbonModifiers & UInt32(shiftKey) != 0 { text += "⇧" }
-        if carbonModifiers & UInt32(cmdKey) != 0 { text += "⌘" }
-        return text + Shortcut.keyName(keyCode)
+    var displayString: String { keys.joined() }
+
+    /// Modifier symbols in ⌃⌥⇧⌘ order, then the key name.
+    var keys: [String] {
+        var keys: [String] = []
+        if carbonModifiers & UInt32(controlKey) != 0 { keys.append("⌃") }
+        if carbonModifiers & UInt32(optionKey) != 0 { keys.append("⌥") }
+        if carbonModifiers & UInt32(shiftKey) != 0 { keys.append("⇧") }
+        if carbonModifiers & UInt32(cmdKey) != 0 { keys.append("⌘") }
+        return keys + [Shortcut.keyName(keyCode)]
     }
 
     private static func keyName(_ code: UInt32) -> String {

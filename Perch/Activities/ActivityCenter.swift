@@ -17,6 +17,8 @@ struct Activity: Identifiable, Equatable {
         case level(Double)
         /// Now playing: bars that move while playback runs and rest while paused.
         case waveform(playing: Bool)
+        /// Dictation: bars that follow the live microphone level, 0…1.
+        case audioLevel(Double)
     }
 
     enum Kind: Equatable {
@@ -29,6 +31,35 @@ struct Activity: Identifiable, Equatable {
         case meeting(eventID: String)
         case privacy(PrivacySensor)
         case download(path: String)
+        case call(CallApp)
+        case notification(id: String, bundleID: String)
+        case weather
+        case airdrop(transferID: String)
+        case dictation
+
+        /// Which source's handlers `ActionRouter` and `DecisionRouter` use for this kind.
+        var owner: String {
+            switch self {
+            case .timer: "timer"
+            case .conversion: "conversion"
+            case .agent: "agent"
+            case .nowPlaying: "nowPlaying"
+            case .hud: "hud"
+            case .deviceBattery: "deviceBattery"
+            case .meeting: "meeting"
+            case .privacy: "privacy"
+            case .download: "downloads"
+            case .call: "call"
+            case .notification: "notifications"
+            case .weather: "weather"
+            case .airdrop: "airdrop"
+            case .dictation: "dictation"
+            }
+        }
+    }
+
+    enum CallApp: Equatable {
+        case zoom, meet
     }
 
     enum HUDKind: Equatable {
@@ -73,6 +104,14 @@ struct Activity: Identifiable, Equatable {
     var decision: PendingDecision?
     /// Primary link the card opens, e.g. a meeting's join URL.
     var link: ActivityLink?
+    /// Buttons the card shows (call: mute/camera/leave; dictation: stop). Pressed via `ActionRouter`.
+    var actions: [ActivityAction] = []
+    /// Non-nil: the card shows a reply field with this placeholder; text goes to `ActionRouter.reply`.
+    var replyPlaceholder: String?
+    /// App icon (notification), file icon (AirDrop): replaces the glyph in rows and cards.
+    var image: NSImage?
+    /// Second, smaller picture beside `image` (AirDrop sender avatar).
+    var badgeImage: NSImage?
 
     /// Lower holds the slot first: blocked > transient > failed > done > running > ambient.
     /// A transient flash (volume change) preempts the pill; whatever it covered returns when it drops.
@@ -106,9 +145,10 @@ struct TimerRun: Equatable {
 }
 
 /// A question the activity's card answers with two buttons (Deny / Allow).
-/// `id` routes the answer back to whoever asked, through `DecisionRouter`.
+/// `owner` picks the handler in `DecisionRouter`; `id` identifies the question to that owner.
 struct PendingDecision: Equatable {
     let id: String
+    var owner = "agent"
     var declineTitle = "Deny"
     var acceptTitle = "Allow"
 }
@@ -119,15 +159,59 @@ struct ActivityLink: Equatable {
     let url: URL
 }
 
-/// Delivers a decision card's answer to the component that asked (the agent bridge).
+/// A button on an activity's card. `isOn` draws it highlighted (muted mic, camera off).
+struct ActivityAction: Equatable, Identifiable {
+    let id: String
+    var title: String
+    var symbol: String
+    var isOn = false
+    var isDestructive = false
+}
+
+/// Delivers a decision card's answer to the source that asked, by `PendingDecision.owner`.
 final class DecisionRouter {
     static let shared = DecisionRouter()
 
-    /// Set by the owner of pending requests; called with the decision id and whether it was accepted.
-    var onAnswer: ((_ id: String, _ accepted: Bool) -> Void)?
+    private var handlers: [String: (_ id: String, _ accepted: Bool) -> Void] = [:]
+
+    func register(owner: String, _ handler: @escaping (_ id: String, _ accepted: Bool) -> Void) {
+        handlers[owner] = handler
+    }
+
+    func unregister(owner: String) {
+        handlers[owner] = nil
+    }
 
     func answer(_ decision: PendingDecision, accepted: Bool) {
-        onAnswer?(decision.id, accepted)
+        handlers[decision.owner]?(decision.id, accepted)
+    }
+}
+
+/// Delivers card buttons and reply text to the source that owns the activity (`Activity.Kind.owner`).
+final class ActionRouter {
+    static let shared = ActionRouter()
+
+    struct Handler {
+        var perform: (_ activity: Activity, _ actionID: String) -> Void
+        var reply: ((_ activity: Activity, _ text: String) -> Void)?
+    }
+
+    private var handlers: [String: Handler] = [:]
+
+    func register(owner: String, _ handler: Handler) {
+        handlers[owner] = handler
+    }
+
+    func unregister(owner: String) {
+        handlers[owner] = nil
+    }
+
+    func perform(_ action: ActivityAction, on activity: Activity) {
+        handlers[activity.kind.owner]?.perform(activity, action.id)
+    }
+
+    func reply(_ text: String, to activity: Activity) {
+        handlers[activity.kind.owner]?.reply?(activity, text)
     }
 }
 
@@ -387,6 +471,13 @@ final class ActivityCenter {
             guard !Task.isCancelled else { return }
             self?.dismiss(id)
         }
+    }
+
+    /// Stops a transient activity from expiring: it stays until dismissed (a message being replied to).
+    func keep(_ id: UUID) {
+        guard let index = index(of: id), case .transient = items[index].presentation else { return }
+        tasks.removeValue(forKey: id)?.cancel()
+        items[index].presentation = .persistent
     }
 
     /// Attaches or clears a decision; the row keeps its status (a cleared request stays `needsAttention`).

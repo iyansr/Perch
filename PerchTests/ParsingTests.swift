@@ -103,3 +103,31 @@ struct PerchCommandTests {
         #expect(!PerchCommand.matches("pr").contains(.quit))
     }
 }
+
+/// Keys are persisted in settings; a key must keep naming the same item across launches.
+struct LauncherItemTests {
+    @Test func keysRoundTrip() {
+        let pane = SystemSettingsPane.all[0]
+        let items: [LauncherItem] = [
+            .app(URL(fileURLWithPath: "/Applications/Visual Studio Code.app")),
+            .setting(pane),
+        ] + PerchCommand.allCases.map(LauncherItem.command)
+        for item in items {
+            #expect(LauncherItem(key: item.key) == item)
+        }
+    }
+
+    @Test func keysMatchSearchResultIDs() {
+        #expect(LauncherItem.command(.quit).key == SearchResult.command(.quit).id)
+        let pane = SystemSettingsPane.all[0]
+        #expect(LauncherItem.setting(pane).key == SearchResult.setting(pane).id)
+    }
+
+    @Test func unknownKeysAreRejected() {
+        #expect(LauncherItem(key: "command:launchRockets") == nil)
+        #expect(LauncherItem(key: "setting:com.example.missing") == nil)
+        #expect(LauncherItem(key: "app:") == nil)
+        #expect(LauncherItem(key: "file:/tmp/x") == nil)
+        #expect(LauncherItem(key: "no-colon") == nil)
+    }
+}

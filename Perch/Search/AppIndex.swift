@@ -78,13 +78,15 @@ nonisolated struct FuzzyName: Hashable, Sendable {
 }
 
 /// Installed applications, scanned off the main thread and refreshed when stale.
+/// Observable so Settings › Shortcuts fills in when the first scan lands.
+@Observable
 final class AppIndex {
     private static let staleAfter: TimeInterval = 60
 
     private(set) var apps: [AppEntry] = []
-    var onUpdate: (() -> Void)?
+    @ObservationIgnored var onUpdate: (() -> Void)?
 
-    private var lastScan: Date = .distantPast
+    @ObservationIgnored private var lastScan: Date = .distantPast
     private(set) var isScanning = false
 
     func refreshIfStale() {

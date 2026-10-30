@@ -77,6 +77,8 @@ struct IdleActivityContent: View {
     private func leading(_ activity: Activity) -> some View {
         if let media = activity.media {
             ArtworkView(image: media.artwork, size: 18)
+        } else if case .notification = activity.kind, let image = activity.image {
+            ActivityImage(image: image, badge: nil, size: 18)
         } else {
             ActivityGlyph(activity: activity)
         }
@@ -85,12 +87,16 @@ struct IdleActivityContent: View {
     @ViewBuilder
     private func trailing(_ activity: Activity, showsClock: Bool = false) -> some View {
         switch (activity.kind, activity.progress) {
-        case (.hud(.capsLock), _):
-            caption(activity.detail) // "On" / "Off"
+        case (.hud(.capsLock), _), (.weather, _), (.call, _):
+            caption(activity.detail) // "On" / "Off"; "18°"; "Muted"
         case (.meeting, _) where activity.presentation == .ambient:
             caption(activity.detail) // start time
         case let (.privacy(sensor), _):
             PrivacyDot(sensor: sensor)
+        case (.notification, _):
+            EmptyView()
+        case (.airdrop, _):
+            if let image = activity.image { ActivityImage(image: image, badge: nil, size: 16) }
         case let (_, .waveform(playing)):
             Waveform(playing: playing, tint: activity.media?.tint.map(Color.init(nsColor:)) ?? .white, height: 12)
         case let (_, .level(level)):
@@ -121,15 +127,19 @@ struct PrivacyDot: View {
     }
 }
 
-/// Hover card: the decision card while a question waits, the music card when music leads,
-/// otherwise up to three activities with their actions.
+/// Hover card: the decision card while a question waits, the reply card for a message, the music card
+/// when music leads, otherwise up to three activities with their actions.
 struct GlanceCard: View {
     let model: NotchModel
+    let controller: NotchController
 
     var body: some View {
         let items = model.activities.glanceItems
         if let activity = items.first, let decision = activity.decision {
             DecisionCard(activity: activity, decision: decision)
+                .frame(maxHeight: .infinity, alignment: .bottom)
+        } else if let activity = items.first, let placeholder = activity.replyPlaceholder {
+            ReplyCard(activity: activity, placeholder: placeholder, model: model, controller: controller)
                 .frame(maxHeight: .infinity, alignment: .bottom)
         } else if let media = items.first?.media {
             MusicCard(media: media)
@@ -148,8 +158,34 @@ struct GlanceCard: View {
     }
 }
 
-/// Shared layout for a two-button question (agent permission request): glyph, two-line title,
-/// full-width Deny / Allow. Stays open on mouse-out until answered (see `NotchController.updateHover`).
+/// App or file icon with an optional round badge (AirDrop sender) at its lower right.
+struct ActivityImage: View {
+    let image: NSImage
+    let badge: NSImage?
+    let size: CGFloat
+
+    var body: some View {
+        Image(nsImage: image)
+            .resizable()
+            .aspectRatio(contentMode: .fit)
+            .frame(width: size, height: size)
+            .overlay(alignment: .bottomTrailing) {
+                if let badge {
+                    Image(nsImage: badge)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: size * 0.5, height: size * 0.5)
+                        .clipShape(Circle())
+                        .overlay { Circle().strokeBorder(.black, lineWidth: 1.5) }
+                        .offset(x: size * 0.12, y: size * 0.12)
+                }
+            }
+    }
+}
+
+/// Shared layout for a two-button question (agent permission request, incoming AirDrop): glyph or
+/// sender picture, two-line title, optional file icon, full-width Decline / Accept.
+/// Stays open on mouse-out until answered (see `NotchController.updateHover`).
 struct DecisionCard: View {
     static let height: CGFloat = 116
 
@@ -159,9 +195,7 @@ struct DecisionCard: View {
     var body: some View {
         VStack(spacing: 12) {
             HStack(spacing: 12) {
-                ActivityGlyph(activity: activity, size: 16)
-                    .frame(width: 34, height: 34)
-                    .background(Circle().fill(activity.status.tint.opacity(0.18)))
+                leading
                 VStack(alignment: .leading, spacing: 2) {
                     Text(activity.title)
                         .font(.system(size: 13, weight: .semibold))
@@ -177,34 +211,134 @@ struct DecisionCard: View {
                     CircleButton(symbol: "terminal") { TerminalFocuser.focus(terminal) }
                         .help("Focus terminal")
                 }
+                if case .airdrop = activity.kind, let file = activity.image {
+                    ActivityImage(image: file, badge: nil, size: 34)
+                }
             }
             HStack(spacing: 8) {
                 Button(decision.declineTitle) { DecisionRouter.shared.answer(decision, accepted: false) }
-                    .buttonStyle(DecisionButtonStyle(prominent: false))
+                    .buttonStyle(DecisionButtonStyle(fill: .white.opacity(0.14), text: .white))
                 Button(decision.acceptTitle) { DecisionRouter.shared.answer(decision, accepted: true) }
-                    .buttonStyle(DecisionButtonStyle(prominent: true))
+                    // AirDrop's own banner accepts in blue; an agent's Allow stays neutral white.
+                    .buttonStyle(decision.owner == "airdrop"
+                        ? DecisionButtonStyle(fill: .blue, text: .white)
+                        : DecisionButtonStyle(fill: .white, text: .black))
             }
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 12)
         .frame(height: Self.height)
     }
+
+    /// AirDrop: the sender's picture (or the AirDrop glyph) rather than the file, which sits on the right.
+    @ViewBuilder
+    private var leading: some View {
+        if case .airdrop = activity.kind, let avatar = activity.badgeImage {
+            Image(nsImage: avatar)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: 34, height: 34)
+                .clipShape(Circle())
+        } else {
+            ActivityGlyph(activity: activity, size: 16)
+                .frame(width: 34, height: 34)
+                .background(Circle().fill(activity.status.tint.opacity(0.18)))
+        }
+    }
 }
 
 private struct DecisionButtonStyle: ButtonStyle {
-    let prominent: Bool
+    let fill: Color
+    let text: Color
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(prominent ? .black : .white)
+            .foregroundStyle(text)
             .frame(maxWidth: .infinity)
             .frame(height: 30)
-            .background(Capsule().fill(prominent ? Color.white : Color.white.opacity(0.14)))
+            .background(Capsule().fill(fill))
             .opacity(configuration.isPressed ? 0.7 : 1)
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
             .contentShape(Capsule())
+    }
+}
+
+/// A message with a reply field. Focusing the field keeps the card open (`NotchModel.isReplying`)
+/// and the message on screen; ↵ sends through `ActionRouter.reply`, Esc gives the keyboard back.
+struct ReplyCard: View {
+    static let height: CGFloat = 128
+
+    let activity: Activity
+    let placeholder: String
+    let model: NotchModel
+    let controller: NotchController
+    @State private var text = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+                if let image = activity.image {
+                    ActivityImage(image: image, badge: nil, size: 30)
+                } else {
+                    ActivityGlyph(activity: activity, size: 15).frame(width: 30, height: 30)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(activity.title)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                    Text(activity.detail)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.white.opacity(0.75))
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 0)
+                ForEach(activity.actions) { action in
+                    ActionButton(action: action, activity: activity)
+                }
+                CircleButton(symbol: "xmark") { finish() }
+                    .help("Dismiss")
+            }
+            TextField(placeholder, text: $text)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 12)
+                .frame(height: 30)
+                .background(Capsule().fill(.white.opacity(0.1)))
+                .focused($focused)
+                .onSubmit(send)
+                .onExitCommand { finish() }
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 12)
+        .frame(height: Self.height)
+        .onChange(of: focused) { _, isFocused in
+            // Clicking another app or the surface takes the focus without sending: release the card.
+            guard isFocused else {
+                controller.endReply()
+                return
+            }
+            // Typing takes as long as it takes: the 6 s flash must not pull the message away.
+            model.activities.keep(activity.id)
+            model.isReplying = true
+        }
+    }
+
+    private func send() {
+        let message = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !message.isEmpty else { return }
+        ActionRouter.shared.reply(message, to: activity)
+        finish()
+    }
+
+    private func finish() {
+        text = ""
+        model.activities.dismiss(activity.id)
+        controller.endReply()
     }
 }
 
@@ -249,6 +383,8 @@ struct GlanceRow: View {
     private var leading: some View {
         if let media = activity.media {
             ArtworkView(image: media.artwork, size: 30)
+        } else if let image = activity.image {
+            ActivityImage(image: image, badge: activity.badgeImage, size: 30)
         } else {
             ActivityGlyph(activity: activity, size: 15)
                 .frame(width: 30, height: 30)
@@ -261,8 +397,8 @@ struct GlanceRow: View {
         switch (activity.kind, activity.progress) {
         case let (.privacy(sensor), _):
             PrivacyDot(sensor: sensor)
-        case (.meeting, _) where activity.presentation == .ambient:
-            EmptyView() // the subtitle already says when
+        case (.meeting, _) where activity.presentation == .ambient, (.weather, _), (.call, _), (.notification, _), (.airdrop, _):
+            EmptyView() // the subtitle already says it; buttons follow
         case let (_, .waveform(playing)):
             Waveform(playing: playing, height: 14)
         case let (_, .level(level)):
@@ -276,7 +412,9 @@ struct GlanceRow: View {
     private var subtitle: String {
         switch activity.kind {
         case .timer, .conversion, .agent: "\(activity.detail) · \(statusText)"
-        case .nowPlaying, .hud, .deviceBattery, .meeting, .privacy, .download: activity.detail
+        case .nowPlaying, .hud, .deviceBattery, .meeting, .privacy, .download, .call, .notification, .weather, .airdrop,
+             .dictation:
+            activity.detail
         }
     }
 
@@ -303,6 +441,9 @@ struct GlanceRow: View {
                 default:
                     EmptyView()
                 }
+            }
+            ForEach(activity.actions) { action in
+                ActionButton(action: action, activity: activity)
             }
             if let link = activity.link {
                 LinkButton(link: link)
@@ -333,12 +474,29 @@ struct GlanceRow: View {
         }
     }
 
-    /// Now playing and sensor chips end with the player or the sensor, not on request.
+    /// Now playing, sensor chips, calls and dictation end with what they track, not on request.
     private var isDismissable: Bool {
         switch activity.kind {
-        case .nowPlaying, .privacy: false
+        case .nowPlaying, .privacy, .call, .dictation: false
         default: true
         }
+    }
+}
+
+/// A source-defined card button (mute, camera, leave, stop). `isOn` lights it; destructive ones are red.
+struct ActionButton: View {
+    let action: ActivityAction
+    let activity: Activity
+
+    var body: some View {
+        CircleButton(symbol: action.symbol, fill: fill) { ActionRouter.shared.perform(action, on: activity) }
+            .help(action.title)
+            .accessibilityLabel(action.title)
+    }
+
+    private var fill: Color {
+        if action.isDestructive { return .red.opacity(0.85) }
+        return action.isOn ? .white.opacity(0.35) : .white.opacity(0.14)
     }
 }
 
@@ -397,6 +555,7 @@ struct LevelBar: View {
 
 struct CircleButton: View {
     let symbol: String
+    var fill: Color = .white.opacity(0.14)
     let action: () -> Void
 
     var body: some View {
@@ -405,7 +564,7 @@ struct CircleButton: View {
                 .font(.system(size: 10, weight: .bold))
                 .foregroundStyle(.white)
                 .frame(width: 26, height: 26)
-                .background(Circle().fill(.white.opacity(0.14)))
+                .background(Circle().fill(fill))
         }
         .buttonStyle(.plain)
     }
@@ -493,6 +652,8 @@ struct ProgressRing: View {
             ring(value)
         case let .waveform(playing):
             Waveform(playing: playing, tint: tint, height: 12)
+        case let .audioLevel(level):
+            AudioMeter(level: level, tint: tint, height: 12)
         case .indeterminate:
             ProgressView().controlSize(.mini)
         }
@@ -507,5 +668,26 @@ struct ProgressRing: View {
                 .rotationEffect(.degrees(-90))
                 .animation(.linear(duration: 1), value: fraction)
         }
+    }
+}
+
+/// Four bars that follow a live input level (dictation); the outer bars move less than the middle.
+struct AudioMeter: View {
+    let level: Double
+    var tint: Color = .white
+    var height: CGFloat = 14
+
+    private static let weights: [Double] = [0.55, 1, 0.8, 0.45]
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 2) {
+            ForEach(Self.weights.indices, id: \.self) { index in
+                Capsule()
+                    .fill(tint)
+                    .frame(width: 2.5, height: height * (0.2 + 0.8 * min(max(level, 0), 1) * Self.weights[index]))
+            }
+        }
+        .frame(height: height)
+        .animation(.easeOut(duration: 0.08), value: level)
     }
 }

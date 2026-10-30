@@ -230,7 +230,7 @@ private struct TimerModule: View {
             Text(timerInterval: start...end, countsDown: true)
         case let .paused(remaining, _):
             Text(TimerCommand.clock(remaining))
-        case .indeterminate, .fraction, .level, .waveform:
+        case .indeterminate, .fraction, .level, .waveform, .audioLevel:
             EmptyView()
         }
     }

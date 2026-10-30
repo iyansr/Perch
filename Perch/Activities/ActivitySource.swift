@@ -1,5 +1,7 @@
 import AppKit
 import CoreBluetooth
+import AVFoundation
+import CoreLocation
 import EventKit
 import Observation
 import SwiftUI
@@ -7,13 +9,16 @@ import SwiftUI
 /// A system permission an activity source depends on, and where it stands.
 enum SourcePermission: Equatable {
     enum Kind: Equatable {
-        case accessibility, bluetooth, calendar
+        case accessibility, bluetooth, calendar, location, microphone, fullDiskAccess
 
         var title: String {
             switch self {
             case .accessibility: "Accessibility"
             case .bluetooth: "Bluetooth"
             case .calendar: "Calendar"
+            case .location: "Location"
+            case .microphone: "Microphone"
+            case .fullDiskAccess: "Full Disk Access"
             }
         }
 
@@ -25,6 +30,12 @@ enum SourcePermission: Equatable {
                 URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Bluetooth")
             case .calendar:
                 URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars")
+            case .location:
+                URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_LocationServices")
+            case .microphone:
+                URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")
+            case .fullDiskAccess:
+                URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")
             }
         }
 
@@ -45,6 +56,21 @@ enum SourcePermission: Equatable {
                 case .notDetermined: return .needed(self)
                 default: return .denied(self) // denied, restricted, or write-only
                 }
+            case .location:
+                switch CLLocationManager().authorizationStatus {
+                case .authorizedAlways: return .granted(self)
+                case .notDetermined: return .needed(self)
+                default: return .denied(self)
+                }
+            case .microphone:
+                switch AVCaptureDevice.authorizationStatus(for: .audio) {
+                case .authorized: return .granted(self)
+                case .notDetermined: return .needed(self)
+                default: return .denied(self)
+                }
+            case .fullDiskAccess:
+                // No API reports it and none prompts for it; reading a protected file is the standard probe.
+                return FullDiskAccess.isGranted ? .granted(self) : .needed(self)
             }
         }
     }
@@ -53,6 +79,17 @@ enum SourcePermission: Equatable {
     case needed(Kind)
     case granted(Kind)
     case denied(Kind)
+}
+
+enum FullDiskAccess {
+    /// The TCC database itself is readable only with Full Disk Access.
+    static var isGranted: Bool {
+        let path = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/com.apple.TCC/TCC.db").path
+        guard let handle = FileHandle(forReadingAtPath: path) else { return false }
+        try? handle.close()
+        return true
+    }
 }
 
 /// Name and look of a source in Settings → Activities.
@@ -92,7 +129,14 @@ final class ActivitySources {
     let meeting = MeetingSource()
     let privacy = PrivacySource()
     let downloads = DownloadsSource()
-    var all: [any ActivitySource] { [nowPlaying, hud, battery, meeting, privacy, downloads] }
+    let call = CallSource()
+    let notifications = NotificationSource()
+    let weather = WeatherSource()
+    let dictation = DictationSource()
+    let airdrop = AirDropSource()
+    var all: [any ActivitySource] {
+        [nowPlaying, hud, battery, meeting, privacy, downloads, call, notifications, weather, dictation, airdrop]
+    }
     private var center: ActivityCenter?
     private var running: Set<String> = []
     private let settings = AppSettings.shared

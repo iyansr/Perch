@@ -1,0 +1,39 @@
+{
+    "latitude": -33.848858,
+    "longitude": 151.19551,
+    "generationtime_ms": 0.09334087371826172,
+    "utc_offset_seconds": 39600,
+    "timezone": "Australia/Sydney",
+    "timezone_abbreviation": "GMT+11",
+    "elevation": 69.0,
+    "current_units": {
+        "time": "iso8601",
+        "interval": "seconds",
+        "temperature_2m": "\u00b0C",
+        "weather_code": "wmo code",
+        "is_day": ""
+    },
+    "current": {
+        "time": "2026-10-31T02:30",
+        "interval": 900,
+        "temperature_2m": 16.3,
+        "weather_code": 2,
+        "is_day": 0
+    },
+    "daily_units": {
+        "time": "iso8601",
+        "temperature_2m_max": "\u00b0C",
+        "temperature_2m_min": "\u00b0C"
+    },
+    "daily": {
+        "time": [
+            "2026-10-31"
+        ],
+        "temperature_2m_max": [
+            26.7
+        ],
+        "temperature_2m_min": [
+            15.7
+        ]
+    }
+}

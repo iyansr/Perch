@@ -88,6 +88,8 @@ final class NotchModel {
     var homeContentHeight: CGFloat = 320
     /// Search was opened from Home (module or typing), so esc steps back to Home instead of closing.
     var searchReturnsHome = false
+    /// The glance's reply field has the keyboard; the card stays open until the reply is sent or dropped.
+    var isReplying = false
     /// Bumps to play the idle pill's pulse without an activity finishing.
     private(set) var helloTick = 0
 
@@ -280,13 +282,19 @@ final class NotchModel {
         activities.glanceItems.first?.decision != nil
     }
 
+    /// A message with a reply field leads the glance.
+    var glanceShowsReplyCard: Bool {
+        !glanceShowsDecisionCard && activities.glanceItems.first?.replyPlaceholder != nil
+    }
+
     /// The music card when music leads the glance, otherwise one row per activity.
     var glanceShowsMusicCard: Bool {
-        !glanceShowsDecisionCard && activities.glanceItems.first?.media != nil
+        !glanceShowsDecisionCard && !glanceShowsReplyCard && activities.glanceItems.first?.media != nil
     }
 
     private var glanceContentHeight: CGFloat {
         if glanceShowsDecisionCard { return DecisionCard.height }
+        if glanceShowsReplyCard { return ReplyCard.height }
         if glanceShowsMusicCard { return MusicCard.height }
         return CGFloat(min(activities.glanceItems.count, Self.glanceMaxRows)) * Self.glanceRowHeight + 16
     }

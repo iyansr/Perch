@@ -13,7 +13,7 @@ struct GeneralSettingsPage: View {
                     title: "Open Perch",
                     detail: "Summon search from any app. Clicking the notch opens Home."
                 ) {
-                    ShortcutRecorderView(shortcut: $settings.hotkey)
+                    ShortcutRecorderView(slot: .open, shortcut: $settings.hotkey)
                 }
             }
             SettingsGroup(title: "Feedback") {
@@ -38,6 +38,19 @@ struct ClipboardSettingsPage: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             SettingsPageHeader(section: .clipboard)
+            SettingsGroup(title: "Shortcut") {
+                SettingsRow(
+                    symbol: PerchCommand.clipboardHistory.symbol,
+                    tint: .orange,
+                    title: PerchCommand.clipboardHistory.title,
+                    detail: "Open the clipboard history from any app."
+                ) {
+                    ShortcutRecorderView(
+                        slot: .launcher(LauncherItem.command(.clipboardHistory).key),
+                        shortcut: $settings.shortcuts[LauncherItem.command(.clipboardHistory).key]
+                    )
+                }
+            }
             SettingsGroup(title: "History") {
                 SettingsRow(
                     symbol: "clock.arrow.circlepath",
@@ -82,19 +95,7 @@ struct ActivitiesSettingsPage: View {
                 ForEach(Array(sources.all.enumerated()), id: \.offset) { index, source in
                     if index > 0 { SettingsDivider() }
                     sourceRow(source)
-                    if source === sources.hud, sources.isEnabled(source) {
-                        SettingsDivider()
-                        SettingsRow(
-                            symbol: "rectangle.slash",
-                            tint: .secondary,
-                            title: "Replace system HUD",
-                            detail: "Hides Apple's volume and brightness overlay by pausing OSDUIHelper. macOS may bring it back after sleep or an update; it returns when Perch quits."
-                        ) {
-                            Toggle("Replace system HUD", isOn: $settings.replacesSystemHUD)
-                                .toggleStyle(.switch)
-                                .labelsHidden()
-                        }
-                    }
+                    if sources.isEnabled(source) { options(for: type(of: source).id) }
                 }
             }
             Label("Timers, conversions and coding agents always show; they are not sources.", systemImage: "info.circle")
@@ -109,6 +110,61 @@ struct ActivitiesSettingsPage: View {
                 if current != permissions { permissions = current }
                 try? await Task.sleep(for: .seconds(1))
             }
+        }
+    }
+
+    /// Extra rows under an enabled source.
+    @ViewBuilder
+    private func options(for id: String) -> some View {
+        switch id {
+        case "hud":
+            SettingsDivider()
+            SettingsRow(
+                symbol: "rectangle.slash",
+                tint: .secondary,
+                title: "Replace system HUD",
+                detail: "Hides Apple's volume and brightness overlay by pausing OSDUIHelper. macOS may bring it back after sleep or an update; it returns when Perch quits."
+            ) {
+                Toggle("Replace system HUD", isOn: $settings.replacesSystemHUD)
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+            }
+        case "call":
+            SettingsDivider()
+            SettingsRow(
+                symbol: "globe",
+                tint: .secondary,
+                title: "Google Meet controls",
+                detail: "Mute, camera and leave for Meet in Chrome. Chrome must allow it: View › Developer › Allow JavaScript from Apple Events."
+            ) {
+                Toggle("Google Meet controls", isOn: $settings.meetControls)
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+            }
+        case "weather":
+            SettingsDivider()
+            SettingsRow(
+                symbol: "mappin.and.ellipse",
+                tint: .secondary,
+                title: "City",
+                detail: "Leave empty to use this Mac's location."
+            ) {
+                TextField("Current location", text: $settings.weatherCity)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 180)
+            }
+        case "dictation":
+            SettingsDivider()
+            SettingsRow(
+                symbol: "keyboard",
+                tint: .secondary,
+                title: "Dictation shortcut",
+                detail: "Press once to start, again to stop and type the text into the app you are using."
+            ) {
+                ShortcutRecorderView(slot: .dictation, shortcut: $settings.dictationHotkey)
+            }
+        default:
+            EmptyView()
         }
     }
 
@@ -143,6 +199,12 @@ private struct PermissionChip: View {
         case let .needed(kind):
             if isEnabled, kind == .accessibility {
                 Button("Grant \(kind.title)…") { AccessibilityPermission.requestPrompt() }
+            } else if isEnabled, kind == .fullDiskAccess {
+                // Nothing can prompt for it: the user adds Perch in the pane by hand.
+                Button("Open System Settings…") {
+                    if let url = kind.settingsURL { NSWorkspace.shared.open(url) }
+                }
+                .help("Add Perch under Full Disk Access, then come back.")
             } else {
                 chip("Needs \(kind.title)", symbol: "lock.fill", tint: .secondary)
             }

@@ -28,11 +28,15 @@ struct AppSettingsTests {
         first.onboardingDone = true
         first.hotkey = Shortcut(keyCode: 49, carbonModifiers: 0x100)
         first.enabledSources = ["hud"]
+        first.shortcuts = ["command:clipboardHistory": Shortcut(keyCode: 8, carbonModifiers: 0x300)]
+        first.hiddenInLauncher = ["app:/Applications/Arc.app"]
 
         let second = AppSettings(defaults: defaults)
         #expect(second.playsSounds == false)
         #expect(second.onboardingDone == true)
         #expect(second.hotkey == Shortcut(keyCode: 49, carbonModifiers: 0x100))
         #expect(second.enabledSources == ["hud"]) // turning nowPlaying off sticks
+        #expect(second.shortcuts == ["command:clipboardHistory": Shortcut(keyCode: 8, carbonModifiers: 0x300)])
+        #expect(second.hiddenInLauncher == ["app:/Applications/Arc.app"])
     }
 }

@@ -6,6 +6,7 @@ enum SettingsSection: CaseIterable, Identifiable {
     case clipboard
     case activities
     case agents
+    case shortcuts
     case permissions
     case about
 
@@ -17,6 +18,7 @@ enum SettingsSection: CaseIterable, Identifiable {
         case .clipboard: "Clipboard"
         case .activities: "Activities"
         case .agents: "Agents"
+        case .shortcuts: "Shortcuts"
         case .permissions: "Permissions"
         case .about: "About"
         }
@@ -29,6 +31,7 @@ enum SettingsSection: CaseIterable, Identifiable {
         case .clipboard: "Keep what you copy and paste it again later."
         case .activities: "What else can show up beside the notch."
         case .agents: "See when Claude Code or Codex needs your input or finishes."
+        case .shortcuts: "Choose what appears in the launcher and assign global shortcuts."
         case .permissions: "Access Perch needs to work with other apps."
         case .about: ""
         }
@@ -40,6 +43,7 @@ enum SettingsSection: CaseIterable, Identifiable {
         case .clipboard: "doc.on.clipboard.fill"
         case .activities: "waveform"
         case .agents: "sparkles"
+        case .shortcuts: "keyboard.fill"
         case .permissions: "lock.shield.fill"
         case .about: "info"
         }
@@ -51,6 +55,7 @@ enum SettingsSection: CaseIterable, Identifiable {
         case .clipboard: .orange
         case .activities: .indigo
         case .agents: .purple
+        case .shortcuts: .teal
         case .permissions: .blue
         case .about: .pink
         }
@@ -93,6 +98,7 @@ struct SettingsView: View {
         case .clipboard: ClipboardSettingsPage()
         case .activities: ActivitiesSettingsPage()
         case .agents: AgentsSettingsPage()
+        case .shortcuts: ShortcutsSettingsPage()
         case .permissions: PermissionsSettingsPage()
         case .about: AboutSettingsPage()
         }

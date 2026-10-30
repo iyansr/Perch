@@ -145,7 +145,7 @@ private struct HotkeyStepBody: View {
                 .font(.system(size: 13))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            ShortcutRecorderView(shortcut: $settings.hotkey)
+            ShortcutRecorderView(slot: .open, shortcut: $settings.hotkey)
         }
     }
 }

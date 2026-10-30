@@ -23,8 +23,8 @@ enum SearchMode: Equatable {
     }
 }
 
-/// Built-in commands, listed under "Commands" in the root list.
-enum PerchCommand: CaseIterable {
+/// Built-in commands, listed under "Commands" in the root list. Raw values key their shortcuts and launcher visibility.
+enum PerchCommand: String, CaseIterable {
     case clipboardHistory, searchFiles, settings, quit
 
     var title: String {
@@ -174,6 +174,8 @@ enum SearchResult: Identifiable, Equatable {
 }
 
 final class SearchEngine {
+    static let shared = SearchEngine()
+
     private static let recentsKey = "perch.recentApps"
     private static let maxRecents = 8
 
@@ -197,10 +199,15 @@ final class SearchEngine {
         files.isSearching || (index.isScanning && index.apps.isEmpty)
     }
 
+    /// Panes this Mac has, in sidebar order. Every pane until the extension scan lands.
+    var availablePanes: [SystemSettingsPane] {
+        SystemSettingsPane.all.filter(isInstalled)
+    }
+
     /// Root results are grouped by `SearchResult.section`, in the order the list shows them:
     /// answers, applications, System Settings panes, commands, then the web and file-search fallbacks. Settings
     /// move above applications when their best match is stronger, so "wallpaper" opens the pane, not a fuzzy app hit.
-    /// An empty query lists recent apps and every command.
+    /// An empty query lists recent apps and every command. Items unchecked in Settings › Shortcuts are left out.
     func results(for rawQuery: String, mode: SearchMode) -> [SearchResult] {
         let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         if mode == .files {
@@ -211,13 +218,17 @@ final class SearchEngine {
         if mode == .clipboard {
             return ClipboardStore.shared.search(query, filter: ClipboardPanelState.shared.filter).map(SearchResult.clip)
         }
+        let hidden = AppSettings.shared.hiddenInLauncher
+        let isShown: (LauncherItem) -> Bool = { !hidden.contains($0.key) }
+        let apps = index.apps.filter { isShown(.app($0.url)) }
+        let commands = PerchCommand.allCases.filter { isShown(.command($0)) }
         guard !query.isEmpty else {
             // Recent apps, then every other app A–Z (the index is sorted), then every command.
-            let recents = recentPaths.compactMap { path in index.apps.first { $0.url.path == path } }
+            let recents = recentPaths.compactMap { path in apps.first { $0.url.path == path } }
             let recentURLs = Set(recents.map(\.url))
             return recents.map { .app($0, isRecent: true) }
-                + index.apps.filter { !recentURLs.contains($0.url) }.map { .app($0) }
-                + PerchCommand.allCases.map(SearchResult.command)
+                + apps.filter { !recentURLs.contains($0.url) }.map { .app($0) }
+                + commands.map(SearchResult.command)
         }
 
         var results: [SearchResult] = []
@@ -232,31 +243,35 @@ final class SearchEngine {
         }
 
         let lower = query.lowercased()
-        let ranked = index.apps
+        let ranked = apps
             .compactMap { app in app.score(for: lower).map { (app, $0 + recencyBoost(for: app)) } }
             .sorted { $0.1 != $1.1 ? $0.1 > $1.1 : $0.0.name < $1.0.name }
-        let apps = ranked.prefix(8).map { SearchResult.app($0.0) }
+        let appResults = ranked.prefix(8).map { SearchResult.app($0.0) }
         // Panes missing on this macOS version are dropped once the extension scan has landed.
         let settings = SystemSettingsPane.matches(lower)
-            .filter { settingsBundles.isEmpty || settingsBundles[$0.pane.identifier] != nil }
+            .filter { isInstalled($0.pane) && isShown(.setting($0.pane)) }
             .prefix(5)
         let panes = settings.map { SearchResult.setting($0.pane) }
         if let topSetting = settings.first?.score, topSetting > ranked.first?.1 ?? 0 {
-            results += panes + apps
+            results += panes + appResults
         } else {
-            results += apps + panes
+            results += appResults + panes
         }
-        results += PerchCommand.matches(lower).map(SearchResult.command)
+        results += PerchCommand.matches(lower).filter(commands.contains).map(SearchResult.command)
         results.append(.web(query))
         results.append(.fileSearch(query))
         return results
     }
 
-    func recordLaunch(of app: AppEntry) {
-        recentPaths.removeAll { $0 == app.url.path }
-        recentPaths.insert(app.url.path, at: 0)
+    func recordLaunch(of url: URL) {
+        recentPaths.removeAll { $0 == url.path }
+        recentPaths.insert(url.path, at: 0)
         recentPaths = Array(recentPaths.prefix(Self.maxRecents))
         UserDefaults.standard.set(recentPaths, forKey: Self.recentsKey)
+    }
+
+    private func isInstalled(_ pane: SystemSettingsPane) -> Bool {
+        settingsBundles.isEmpty || settingsBundles[pane.identifier] != nil
     }
 
     func icon(for app: AppEntry) -> NSImage {

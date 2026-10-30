@@ -47,6 +47,10 @@ struct NotchRootView: View {
         .onChange(of: model.glanceShowsDecisionCard) { _, shows in
             if !shows { controller.updateHover() }
         }
+        // A message that expires or is dismissed while its field has the keyboard releases it.
+        .onChange(of: model.glanceShowsReplyCard) { _, shows in
+            if !shows { controller.endReply() }
+        }
     }
 }
 
@@ -149,7 +153,7 @@ private struct NotchSurface: View {
             SearchFieldRow(model: model, topInset: model.geometry.style == .notch ? model.geometry.notchSize.height : 0)
                 .transition(.notchContent)
         case .glance where model.hasGlance:
-            GlanceCard(model: model)
+            GlanceCard(model: model, controller: controller)
                 .transition(.notchContent)
         case .onboarding:
             if let onboarding = model.onboarding {

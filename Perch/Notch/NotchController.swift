@@ -52,8 +52,13 @@ final class NotchController {
         }
         screens.refresh() // first extras scan, now that changes reach the panel
 
-        HotkeyManager.shared.onPress = { [weak self] in self?.toggle() }
+        HotkeyManager.shared.setHandler({ [weak self] in self?.toggle() }, for: .open)
+        HotkeyManager.shared.onLauncherPress = { [weak self] key in
+            guard let item = LauncherItem(key: key) else { return }
+            self?.run(item)
+        }
         observeHotkey()
+        observeLauncherShortcuts()
         observeClipboard()
 
         installEventMonitors()
@@ -68,8 +73,57 @@ final class NotchController {
         } onChange: { [weak self] in
             Task { @MainActor in self?.observeHotkey() }
         }
-        if !HotkeyManager.shared.register(shortcut) {
+        if !HotkeyManager.shared.register(shortcut, slot: .open) {
             NSLog("Perch: \(shortcut.displayString) is already taken by another app; open Perch by clicking the notch.")
+        }
+    }
+
+    /// Registers every launcher item's shortcut from Settings › Shortcuts, again whenever they change.
+    private func observeLauncherShortcuts() {
+        let shortcuts = withObservationTracking {
+            AppSettings.shared.shortcuts
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.observeLauncherShortcuts() }
+        }
+        for key in HotkeyManager.shared.setLauncherShortcuts(shortcuts) {
+            NSLog("Perch: \(shortcuts[key]?.displayString ?? "") for \(key) is already taken by another app.")
+        }
+    }
+
+    /// A launcher item's global shortcut: opens the app or pane, or runs the command, from anywhere.
+    private func run(_ item: LauncherItem) {
+        switch item {
+        case let .app(url):
+            model.search.recordLaunch(of: url)
+            close(restoreFocus: false)
+            NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+        case let .setting(pane):
+            close(restoreFocus: false)
+            NSWorkspace.shared.open(pane.url)
+        case let .command(command):
+            switch command {
+            case .clipboardHistory: toggle(mode: .clipboard)
+            case .searchFiles: toggle(mode: .files)
+            case .settings: openSettings()
+            case .quit: NSApp.terminate(nil)
+            }
+        }
+    }
+
+    /// A command's shortcut: opens search straight in `mode`, switches to it if search is open in another mode,
+    /// and closes search when it already shows `mode`.
+    private func toggle(mode: SearchMode) {
+        switch model.state {
+        case .open where model.mode == mode:
+            close()
+        case .open:
+            ClipboardPanelState.shared.reset()
+            model.resetSearch(mode: mode)
+            focusSearchField()
+        case .idle, .glance, .home:
+            open(mode: mode)
+        case .onboarding, .dropZone:
+            break
         }
     }
 
@@ -235,7 +289,7 @@ final class NotchController {
     func run(_ result: SearchResult) {
         switch result {
         case let .app(app, _):
-            model.search.recordLaunch(of: app)
+            model.search.recordLaunch(of: app.url)
             close(restoreFocus: false)
             NSWorkspace.shared.openApplication(at: app.url, configuration: NSWorkspace.OpenConfiguration())
         case let .answer(_, value):
@@ -559,6 +613,8 @@ final class NotchController {
             guard !inside else { return }
             // A pending decision stays up until answered or withdrawn; NotchRootView re-runs this when it clears.
             if model.glanceShowsDecisionCard { return }
+            // Typing a reply: the card stays until it is sent or dropped (`endReply`).
+            if model.isReplying { return }
             // The music card lingers, so a control click that drifts past the edge does not collapse it.
             guard model.glanceShowsMusicCard else {
                 collapseGlance()
@@ -583,5 +639,14 @@ final class NotchController {
             model.state = .idle
             model.isHovering = false
         }
+    }
+
+    /// The reply card sent or dropped its message: keyboard back to the previous app, card free to collapse.
+    func endReply() {
+        guard model.isReplying else { return }
+        model.isReplying = false
+        panel.makeFirstResponder(nil)
+        panel.releaseKey()
+        updateHover()
     }
 }
