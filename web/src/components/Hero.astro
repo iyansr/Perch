@@ -5,13 +5,15 @@ import { SITE } from '../site';
 ---
 
 <section id="top" class="mx-auto max-w-6xl px-5 pt-14 sm:pt-20">
-	<div class="max-w-3xl mx-auto text-center">
-		<h1 class="display text-[44px] sm:text-[64px] lg:text-[76px]">Your notch,<br />put to work.</h1>
-		<p class="mt-5 max-w-[52ch] text-[17px] leading-relaxed text-fg-2 sm:text-[19px]">
-			Search, clipboard history, file conversion and live status for your coding agents, in the one spot windows never
-			cover.
+	<div class="mx-auto max-w-3xl text-center">
+		<h1 class="display text-[44px] sm:text-[64px] lg:text-[76px]">
+			A Dynamic Island<br />for your Mac.
+		</h1>
+		<p class="mx-auto mt-5 max-w-[54ch] text-[17px] leading-relaxed text-fg-2 sm:text-[19px]">
+			Perch turns the notch into a command center, and gives external monitors the same floating island. Search, clipboard,
+			file conversion and live status for your coding agents.
 		</p>
-		<div class="mt-8 flex flex-wrap items-center gap-3 mx-auto justify-center">
+		<div class="mx-auto mt-8 flex flex-wrap items-center justify-center gap-3">
 			<a
 				href={SITE.downloadUrl}
 				class="press inline-flex h-12 items-center gap-2 rounded-full bg-accent px-6 text-[16px] font-semibold text-accent-ink hover:bg-[#ffad2e]"
@@ -30,6 +32,6 @@ import { SITE } from '../site';
 	</div>
 
 	<div id="demo" class="mt-12 scroll-mt-24 sm:mt-16">
-		<NotchDemo client:visible />
+		<NotchDemo client:load />
 	</div>
 </section>

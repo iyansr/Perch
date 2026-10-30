@@ -340,11 +340,19 @@ export default function NotchDemo() {
 	const [held, setHeld] = useState({ alt: false, space: false });
 	const onHotkey = useRef(() => {});
 	onHotkey.current = () => {
-		if (surface === 'panel') back();
-		else openPanel('root', '', surface === 'home');
+		if (surface === 'panel') {
+			back();
+			return;
+		}
+		// Off-screen: bring the demo into view first so the search is seen opening.
+		const r = stageRef.current?.getBoundingClientRect();
+		if (r && (r.bottom < 0 || r.top > window.innerHeight)) {
+			stageRef.current?.scrollIntoView({ block: 'center', behavior: reduce ? 'auto' : 'smooth' });
+		}
+		openPanel('root', '', surface === 'home');
 	};
 	useEffect(() => {
-		if (!inView) return;
+		// Listens for the page's whole life, not only while the demo is visible.
 		const onKey = (e: globalThis.KeyboardEvent) => {
 			const space = e.code === 'Space' ? e.type === 'keydown' : undefined;
 			setHeld((h) => {
@@ -367,7 +375,7 @@ export default function NotchDemo() {
 			window.removeEventListener('blur', reset);
 			reset();
 		};
-	}, [inView]);
+	}, []);
 
 	const onConvertPick = (action: ConvertAction) => {
 		setConvert({ phase: 'running', output: `${SOURCE_FILE.base}${action.suffix}.${action.ext}`, startedAt: Date.now() });
