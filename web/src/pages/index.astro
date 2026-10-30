@@ -1,0 +1,38 @@
+---
+import { SITE } from '../site';
+import Agents from '../components/Agents.astro';
+import Download from '../components/Download.astro';
+import Faq from '../components/Faq.astro';
+import Features from '../components/Features.astro';
+import Hero from '../components/Hero.astro';
+import Keyboard from '../components/Keyboard.astro';
+import Nav from '../components/Nav.astro';
+import Privacy from '../components/Privacy.astro';
+import States from '../components/States.astro';
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout>
+	<a
+		href="#main"
+		class="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[60] focus:rounded-full focus:bg-fg focus:px-4 focus:py-2 focus:text-canvas"
+		>Skip to content</a
+	>
+	<Nav />
+	<main id="main">
+		<Hero />
+		<States />
+		<Features />
+		<Agents />
+		<Privacy />
+		<Keyboard />
+		<Faq />
+		<Download />
+	</main>
+	<footer class="border-t border-line">
+		<div class="mx-auto flex max-w-6xl flex-col gap-3 px-5 py-8 text-[13px] text-fg-2 sm:flex-row sm:items-center sm:justify-between">
+			<p>© {new Date().getFullYear()} {SITE.name}</p>
+			<p>Claude is a trademark of Anthropic. Codex is a trademark of OpenAI.</p>
+		</div>
+	</footer>
+</Layout>

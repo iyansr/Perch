@@ -1,0 +1,106 @@
+---
+import { CheckIcon, XIcon } from '@phosphor-icons/react/ssr';
+
+const steps = [
+	{
+		title: 'Connect Claude Code or Codex',
+		body: 'One click adds Perch’s hooks to ~/.claude/settings.json or ~/.codex/hooks.json. Your own hooks stay where they are.',
+	},
+	{
+		title: 'See the change first',
+		body: 'Perch shows the diff before it writes, and backs up the original file next to it.',
+	},
+	{
+		title: 'Safe to uninstall',
+		body: 'Each hook checks that Perch is still installed and does nothing if it isn’t, so removing Perch never breaks an agent.',
+	},
+];
+
+const states = [
+	{ label: 'Running', detail: 'Edit src/routes/users.ts', tone: 'run' },
+	{ label: 'Needs input', detail: 'Bash(npm test)', tone: 'ask' },
+	{ label: 'Done', detail: 'api-server', tone: 'done' },
+	{ label: 'Failed', detail: 'exit 1 after 42 s', tone: 'fail' },
+];
+---
+
+<section id="agents" class="mx-auto max-w-6xl scroll-mt-20 px-5 pt-28 sm:pt-36">
+	<div class="grid grid-cols-[minmax(0,1fr)] gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] lg:gap-16">
+		<div>
+			<div class="flex items-center gap-3" aria-label="Works with Claude Code and Codex">
+				<span
+					class="size-7 bg-[#d97757]"
+					style="mask:url(/brand/ClaudeLogo.svg) center/contain no-repeat;-webkit-mask:url(/brand/ClaudeLogo.svg) center/contain no-repeat"
+					role="img"
+					aria-label="Claude Code"></span>
+				<span
+					class="size-7 bg-fg"
+					style="mask:url(/brand/OpenAILogo.svg) center/contain no-repeat;-webkit-mask:url(/brand/OpenAILogo.svg) center/contain no-repeat"
+					role="img"
+					aria-label="Codex"></span>
+			</div>
+			<h2 class="display mt-6 max-w-[16ch] text-[34px] sm:text-[48px]">Know the moment an agent needs you.</h2>
+			<p class="mt-4 max-w-[52ch] text-[17px] leading-relaxed text-fg-2">
+				Every Claude Code and Codex session becomes a live activity. When one asks for permission the notch turns amber,
+				and Focus brings the right terminal forward.
+			</p>
+
+			<ol class="mt-10 space-y-6">
+				{
+					steps.map((step, i) => (
+						<li class="grid grid-cols-[2rem_1fr] gap-x-3">
+							<span class="grid size-7 place-items-center rounded-full border border-line-strong font-mono text-[12px] text-fg-2">
+								{i + 1}
+							</span>
+							<div>
+								<h3 class="text-[16px] font-semibold">{step.title}</h3>
+								<p class="mt-1 text-[15px] leading-relaxed text-fg-2">{step.body}</p>
+							</div>
+						</li>
+					))
+				}
+			</ol>
+		</div>
+
+		<div class="flex flex-col gap-4">
+			<ul class="grid gap-2 rounded-[22px] border border-line bg-raised p-5 sm:grid-cols-2" aria-label="Agent states in the notch">
+				{
+					states.map((s) => (
+						<li class="flex flex-col gap-2 rounded-[14px] bg-black/40 p-3.5">
+							<span
+								class:list={[
+									'flex h-8 w-full items-center justify-between rounded-full bg-black px-3',
+									s.tone === 'ask' && 'shadow-[0_0_0_1.5px_rgb(255_159_10/0.75)]',
+								]}
+							>
+								<span
+									aria-hidden="true"
+									class="size-3.5 bg-[#d97757]"
+									style="mask:url(/brand/ClaudeLogo.svg) center/contain no-repeat;-webkit-mask:url(/brand/ClaudeLogo.svg) center/contain no-repeat"
+								/>
+								{s.tone === 'run' && (
+									<span class="size-3 animate-spin rounded-full border-2 border-white/20 border-t-white motion-reduce:animate-none" />
+								)}
+								{s.tone === 'ask' && <span class="text-[11px] font-semibold text-accent">Input</span>}
+								{s.tone === 'done' && <CheckIcon size={13} weight="bold" aria-hidden="true" />}
+								{s.tone === 'fail' && <XIcon size={13} weight="bold" className="text-white/70" aria-hidden="true" />}
+							</span>
+							<span class="text-[14px] font-semibold">{s.label}</span>
+							<span class="truncate font-mono text-[12px] text-fg-2">{s.detail}</span>
+						</li>
+					))
+				}
+			</ul>
+
+			<div class="overflow-hidden rounded-[22px] border border-line bg-[#0f0f11]">
+				<div class="flex items-center justify-between border-b border-line px-5 py-3">
+					<span class="font-mono text-[12px] text-fg-2">Any other command</span>
+				</div>
+				<pre
+					class="overflow-x-auto px-5 py-4 font-mono text-[13px] leading-relaxed"><code><span class="text-accent">$</span> perch watch -- npm run build
+<span class="text-fg-2"># Perch shows it as running, then done or failed
+# with the exit code and how long it took.</span></code></pre>
+			</div>
+		</div>
+	</div>
+</section>

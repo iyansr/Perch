@@ -1,0 +1,53 @@
+---
+import { PlusIcon } from '@phosphor-icons/react/ssr';
+import { SITE } from '../site';
+
+const faqs = [
+	{
+		q: 'Do I need a MacBook with a notch?',
+		a: 'No. On a display without one, such as an external monitor with the lid closed, Perch shows a floating island at the top of the screen. It switches between the two when you open or close the lid.',
+	},
+	{
+		q: 'Which Macs does it run on?',
+		a: `Any Mac on ${SITE.minimumOS}.`,
+	},
+	{
+		q: 'Why isn’t it on the Mac App Store?',
+		a: 'The App Store sandbox blocks drawing above the menu bar and the agent hooks Perch relies on. Perch ships as a signed, notarized download instead.',
+	},
+	{
+		q: 'What exactly does “Connect Claude Code” change?',
+		a: 'It adds Perch’s entries to the hooks in ~/.claude/settings.json (for Codex, ~/.codex/hooks.json). You see the diff first, the original is backed up, and every other hook stays as it was.',
+	},
+	{
+		q: 'Can I watch something that isn’t an AI agent?',
+		a: 'Yes. Prefix any command with perch watch -- and it shows up as a live activity until it exits.',
+	},
+	{
+		q: 'Does Perch paste for me?',
+		a: 'With Accessibility permission, ↵ on a clip pastes straight into the app you were in. Without it, Perch copies and you paste.',
+	},
+];
+---
+
+<section id="faq" class="mx-auto max-w-3xl scroll-mt-20 px-5 pt-28 sm:pt-36">
+	<h2 class="display text-[34px] sm:text-[48px]">Questions</h2>
+	<div class="mt-10 divide-y divide-line border-y border-line">
+		{
+			faqs.map((item) => (
+				<details class="group">
+					<summary class="flex cursor-pointer list-none items-center justify-between gap-6 py-5 text-[17px] font-semibold [&::-webkit-details-marker]:hidden">
+						{item.q}
+						<PlusIcon
+							size={18}
+							weight="bold"
+							aria-hidden="true"
+							className="shrink-0 text-fg-2 transition-transform duration-200 group-open:rotate-45 motion-reduce:transition-none"
+						/>
+					</summary>
+					<p class="max-w-[62ch] pb-6 text-[15px] leading-relaxed text-fg-2">{item.a}</p>
+				</details>
+			))
+		}
+	</div>
+</section>

@@ -1,0 +1,23 @@
+---
+import { Image } from 'astro:assets';
+import { AppleLogoIcon } from '@phosphor-icons/react/ssr';
+import icon from '../assets/perch-icon.png';
+import { SITE } from '../site';
+---
+
+<section id="download" class="mx-auto max-w-6xl scroll-mt-20 px-5 pt-28 pb-24 sm:pt-36">
+	<div
+		class="flex flex-col items-center rounded-[22px] border border-line bg-[radial-gradient(70%_90%_at_50%_110%,rgb(255_140_0/0.28),transparent_70%),var(--color-raised)] px-6 py-16 text-center sm:py-20"
+	>
+		<Image src={icon} alt="Perch app icon" width={112} height={112} class="size-28" />
+		<h2 class="display mt-8 max-w-[16ch] text-[34px] sm:text-[48px]">Give your notch a job.</h2>
+		<p class="mt-4 text-[16px] text-fg-2">Runs on {SITE.minimumOS}.</p>
+		<a
+			href={SITE.downloadUrl}
+			class="press mt-8 inline-flex h-12 items-center gap-2 rounded-full bg-accent px-6 text-[16px] font-semibold text-accent-ink hover:bg-[#ffad2e]"
+		>
+			<AppleLogoIcon size={18} weight="fill" aria-hidden="true" />
+			Download for Mac
+		</a>
+	</div>
+</section>

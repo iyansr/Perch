@@ -1,0 +1,38 @@
+---
+import { Image } from 'astro:assets';
+import icon from '../assets/perch-icon.png';
+import { SITE } from '../site';
+
+const links = [
+	{ href: '#features', label: 'Features' },
+	{ href: '#agents', label: 'Agents' },
+	{ href: '#privacy', label: 'Privacy' },
+	{ href: '#faq', label: 'FAQ' },
+];
+---
+
+<header class="material sticky top-0 z-50 shadow-[0_1px_0_rgb(255_255_255/0.06)]">
+	<nav aria-label="Main" class="mx-auto flex h-16 max-w-6xl items-center justify-between gap-6 px-5">
+		<a href="#top" class="flex items-center gap-2.5 rounded-full text-[17px] font-semibold tracking-tight">
+			<Image src={icon} alt="" width={32} height={32} class="size-8" loading="eager" />
+			{SITE.name}
+		</a>
+		<ul class="hidden items-center gap-1 md:flex">
+			{
+				links.map((link) => (
+					<li>
+						<a href={link.href} class="rounded-full px-3.5 py-2 text-[14px] text-fg-2 transition-colors hover:text-fg">
+							{link.label}
+						</a>
+					</li>
+				))
+			}
+		</ul>
+		<a
+			href={SITE.downloadUrl}
+			class="press inline-flex h-9 items-center rounded-full bg-fg px-4 text-[14px] font-semibold text-canvas hover:bg-white"
+		>
+			Download
+		</a>
+	</nav>
+</header>

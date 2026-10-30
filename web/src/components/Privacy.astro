@@ -1,0 +1,49 @@
+---
+import { ClipboardTextIcon, FileMagnifyingGlassIcon, HandPointingIcon, LockKeyIcon } from '@phosphor-icons/react/ssr';
+
+const points = [
+	{
+		icon: ClipboardTextIcon,
+		title: 'History stays local',
+		body: 'Clipboard history lives in a database on your Mac. Clear it in one click.',
+	},
+	{
+		icon: LockKeyIcon,
+		title: 'Passwords are skipped',
+		body: 'Copies that password managers mark as concealed never enter the history.',
+	},
+	{
+		icon: FileMagnifyingGlassIcon,
+		title: 'No silent config edits',
+		body: 'Agent hooks are shown as a diff before writing, with a backup of the original.',
+	},
+	{
+		icon: HandPointingIcon,
+		title: 'Permissions when needed',
+		body: 'Accessibility is only for pasting into other apps. Without it, clipboard works in copy-only mode.',
+	},
+];
+---
+
+<section id="privacy" class="mx-auto max-w-6xl scroll-mt-20 px-5 pt-28 sm:pt-36">
+	<h2 class="display max-w-[18ch] text-[34px] sm:text-[48px]">It all stays on your Mac.</h2>
+	<p class="mt-4 max-w-[56ch] text-[17px] leading-relaxed text-fg-2">
+		Perch sits next to your clipboard and your agent configs, so it treats both with care.
+	</p>
+
+	<dl class="mt-12 grid gap-x-10 gap-y-10 sm:grid-cols-2">
+		{
+			points.map(({ icon: Icon, title, body }) => (
+				<div class="grid grid-cols-[2.75rem_1fr] gap-x-4 border-t border-line pt-6">
+					<dt class="contents">
+						<span class="grid size-11 place-items-center rounded-[14px] bg-raised text-accent">
+							<Icon size={20} weight="bold" aria-hidden="true" />
+						</span>
+						<span class="self-center text-[17px] font-semibold">{title}</span>
+					</dt>
+					<dd class="col-start-2 mt-1 text-[15px] leading-relaxed text-fg-2">{body}</dd>
+				</div>
+			))
+		}
+	</dl>
+</section>

@@ -1,0 +1,37 @@
+---
+const keys = [
+	{ keys: ['⌥', 'Space'], action: 'Open search from anywhere. You pick the keys at first launch.' },
+	{ keys: ['↑', '↓'], action: 'Move through results' },
+	{ keys: ['↵'], action: 'Open, run, or paste into the app you were in' },
+	{ keys: ['⌘', '↵'], action: 'Copy a clip without pasting' },
+	{ keys: ['⌘', '.'], action: 'Pin or unpin a clip' },
+	{ keys: ['esc'], action: 'Clear the field, step back, then close' },
+];
+---
+
+<section class="mx-auto max-w-6xl px-5 pt-28 sm:pt-36">
+	<div class="grid gap-10 rounded-[22px] border border-line bg-raised p-7 sm:p-10 lg:grid-cols-[0.8fr_1.2fr]">
+		<div>
+			<h2 class="display text-[30px] sm:text-[40px]">Made for the keyboard.</h2>
+			<p class="mt-4 max-w-[40ch] text-[16px] leading-relaxed text-fg-2">
+				Clicking the notch opens Home. Start typing there and you are already searching.
+			</p>
+		</div>
+		<dl class="divide-y divide-line">
+			{
+				keys.map((row) => (
+					<div class="flex items-center gap-5 py-3.5 first:pt-0 last:pb-0">
+						<dt class="flex w-28 shrink-0 gap-1.5">
+							{row.keys.map((k) => (
+								<kbd class="inline-grid h-8 min-w-8 place-items-center rounded-[8px] border border-line-strong bg-canvas px-2 font-mono text-[13px] text-fg shadow-[0_1px_0_rgb(255_255_255/0.08)]">
+									{k}
+								</kbd>
+							))}
+						</dt>
+						<dd class="text-[15px] text-fg-2">{row.action}</dd>
+					</div>
+				))
+			}
+		</dl>
+	</div>
+</section>

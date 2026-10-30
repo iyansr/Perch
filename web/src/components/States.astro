@@ -1,0 +1,86 @@
+---
+const states = [
+	{
+		name: 'Pill',
+		how: 'Always there',
+		body: 'The notch at rest. A running timer, conversion or agent shows its status in the ears.',
+	},
+	{
+		name: 'Glance',
+		how: 'Hover',
+		body: 'Peek at every activity with one action each: pause the timer, focus the agent’s terminal.',
+	},
+	{
+		name: 'Home',
+		how: 'Click',
+		body: 'Activity, timer, latest clip, search and a drop well, laid out like Control Center.',
+	},
+	{
+		name: 'Command panel',
+		how: '⌥ Space',
+		body: 'Apps, System Settings, math, timers and clipboard history from one field. Esc steps back.',
+	},
+];
+---
+
+<section class="mx-auto max-w-6xl px-5 pt-28 sm:pt-36">
+	<h2 class="display max-w-[18ch] text-[34px] sm:text-[48px]">One surface. Four states.</h2>
+	<p class="mt-4 max-w-[58ch] text-[17px] leading-relaxed text-fg-2">
+		Perch never opens a window you have to manage. Every state grows out of the notch, and every exit folds back into
+		it.
+	</p>
+
+	<ol class="mt-12 grid gap-px overflow-hidden rounded-[22px] border border-line bg-line sm:grid-cols-2 lg:grid-cols-4">
+		{
+			states.map((state, i) => (
+				<li class="flex flex-col bg-canvas p-6">
+					<div aria-hidden="true" class="relative h-[132px] overflow-hidden rounded-[14px] bg-raised">
+						{i === 0 && (
+							<div class="absolute top-0 left-1/2 flex h-6 w-36 -translate-x-1/2 items-center justify-between rounded-b-[10px] bg-black px-2.5">
+								<span class="size-2.5 rounded-sm bg-[#d97757]" />
+								<span class="font-mono text-[9px] text-white/80">24:12</span>
+							</div>
+						)}
+						{i === 1 && (
+							<div class="absolute top-0 left-1/2 w-44 -translate-x-1/2 space-y-2 rounded-b-[16px] bg-black px-3 pt-8 pb-3">
+								<div class="flex items-center gap-2">
+									<span class="size-4 rounded-[5px] bg-white/15" />
+									<span class="h-1.5 w-20 rounded-full bg-white/40" />
+									<span class="ml-auto h-3 w-8 rounded-full bg-accent" />
+								</div>
+								<div class="flex items-center gap-2">
+									<span class="size-4 rounded-[5px] bg-white/15" />
+									<span class="h-1.5 w-14 rounded-full bg-white/25" />
+								</div>
+							</div>
+						)}
+						{i === 2 && (
+							<div class="absolute top-0 left-1/2 grid w-52 -translate-x-1/2 grid-cols-3 gap-1.5 rounded-b-[16px] bg-black p-2 pt-8">
+								<span class="col-span-2 h-10 rounded-[7px] bg-white/[0.12]" />
+								<span class="h-10 rounded-[7px] bg-white/[0.12]" />
+								<span class="h-8 rounded-[7px] bg-white/[0.12]" />
+								<span class="h-8 rounded-[7px] bg-white/[0.12]" />
+								<span class="h-8 rounded-[7px] border border-dashed border-white/25" />
+							</div>
+						)}
+						{i === 3 && (
+							<>
+								<div class="absolute top-0 left-1/2 flex h-[52px] w-52 -translate-x-1/2 items-end rounded-b-[14px] bg-black px-3 pb-2.5">
+									<span class="h-1.5 w-24 rounded-full bg-white/50" />
+								</div>
+								<div class="absolute top-[58px] left-1/2 w-52 -translate-x-1/2 space-y-1 rounded-[12px] bg-white/[0.08] p-1.5">
+									<span class="block h-5 rounded-[6px] bg-accent" />
+									<span class="block h-5 rounded-[6px] bg-white/[0.06]" />
+									<span class="block h-5 rounded-[6px] bg-white/[0.06]" />
+								</div>
+							</>
+						)}
+					</div>
+					<p class="mt-5 font-mono text-[12px] text-accent">{state.how}</p>
+					<h3 class="mt-1 text-[19px] font-semibold tracking-tight">{state.name}</h3>
+					<p class="mt-2 text-[15px] leading-relaxed text-fg-2">{state.body}</p>
+				</li>
+			))
+		}
+	</ol>
+</section>

@@ -1,0 +1,174 @@
+---
+import { AppWindowIcon, ClipboardTextIcon, EqualsIcon, GearSixIcon, PushPinIcon, TimerIcon } from '@phosphor-icons/react/ssr';
+
+const searches = [
+	{ q: 'dark mode', icon: GearSixIcon, title: 'Appearance', meta: 'System Settings' },
+	{ q: '5 km to mi', icon: EqualsIcon, title: '3.106856 mi', meta: 'Answer' },
+	{ q: 't 25m', icon: TimerIcon, title: 'Start a 25 min timer', meta: 'Timer' },
+	{ q: 'fig', icon: AppWindowIcon, title: 'Figma', meta: 'Application' },
+];
+
+const clips = [
+	{ text: 'Jl. Sudirman No. 21, Jakarta', meta: 'Notes', pinned: true },
+	{ text: 'npm run build -- --watch', meta: 'Ghostty', pinned: false },
+	{ text: '#FF9F0A', meta: 'Figma', pinned: false },
+];
+
+const bars = [0.45, 0.8, 0.6, 1, 0.7, 0.4, 0.85, 0.55];
+---
+
+<section id="features" class="mx-auto max-w-6xl scroll-mt-20 px-5 pt-28 sm:pt-36">
+	<h2 class="display max-w-[20ch] text-[34px] sm:text-[48px]">Everything you reach for, one gesture away.</h2>
+	<p class="mt-4 max-w-[58ch] text-[17px] leading-relaxed text-fg-2">
+		A launcher, a clipboard manager, a converter and a status bar for long-running work, sharing one black shape at the
+		top of your screen.
+	</p>
+
+	<div class="mt-12 grid gap-4 md:grid-cols-3">
+		<article class="flex flex-col overflow-hidden rounded-[22px] border border-line bg-raised md:col-span-2">
+			<div class="p-7 pb-0">
+				<h3 class="text-[21px] font-semibold tracking-tight">Search that answers</h3>
+				<p class="mt-2 max-w-[48ch] text-[15px] leading-relaxed text-fg-2">
+					Apps, System Settings panes by name or by what they hold, math, unit conversion and timers. Anything else
+					becomes a web search.
+				</p>
+			</div>
+			<ul class="mt-7 grid gap-2 px-7 pb-7 sm:grid-cols-2">
+				{
+					searches.map(({ q, icon: Icon, title, meta }) => (
+						<li class="rounded-[14px] bg-black/40 p-3">
+							<p class="font-mono text-[12px] text-fg-2">
+								<span class="text-accent">›</span> {q}
+							</p>
+							<div class="mt-2.5 flex items-center gap-3">
+								<span class="grid size-8 place-items-center rounded-[9px] bg-white/[0.08]">
+									<Icon size={16} weight="bold" aria-hidden="true" />
+								</span>
+								<span class="flex min-w-0 flex-col">
+									<span class="truncate text-[14px] font-semibold">{title}</span>
+									<span class="text-[12px] text-fg-2">{meta}</span>
+								</span>
+							</div>
+						</li>
+					))
+				}
+			</ul>
+		</article>
+
+		<article class="flex flex-col overflow-hidden rounded-[22px] border border-line bg-raised">
+			<div class="p-7 pb-0">
+				<h3 class="text-[21px] font-semibold tracking-tight">Clipboard history</h3>
+				<p class="mt-2 text-[15px] leading-relaxed text-fg-2">
+					The last 200 things you copied: text, images and files. Pin what you keep. Password manager copies are never
+					recorded.
+				</p>
+			</div>
+			<ul class="mt-auto space-y-1.5 p-7">
+				{
+					clips.map((clip, i) => (
+						<li
+							class:list={[
+								'flex items-center gap-3 rounded-[12px] px-3 py-2.5',
+								i === 0 ? 'bg-accent text-accent-ink' : 'bg-white/[0.05]',
+							]}
+						>
+							<ClipboardTextIcon size={16} weight="bold" aria-hidden="true" className="shrink-0" />
+							<span class="min-w-0 flex-1 truncate text-[13px] font-medium">{clip.text}</span>
+							{clip.pinned && <PushPinIcon size={14} weight="fill" aria-label="Pinned" />}
+						</li>
+					))
+				}
+				<li class="flex justify-between px-1 pt-2 text-[12px] text-fg-2">
+					<span><kbd class="font-mono text-fg">↵</kbd> Paste</span>
+					<span><kbd class="font-mono text-fg">⌘↵</kbd> Copy</span>
+					<span><kbd class="font-mono text-fg">⌘.</kbd> Pin</span>
+				</li>
+			</ul>
+		</article>
+
+		<article
+			class="flex flex-col overflow-hidden rounded-[22px] border border-line bg-[radial-gradient(90%_70%_at_50%_0%,rgb(255_159_10/0.16),transparent_70%),var(--color-raised)]"
+		>
+			<div class="p-7 pb-0">
+				<h3 class="text-[21px] font-semibold tracking-tight">Drop to convert</h3>
+				<p class="mt-2 text-[15px] leading-relaxed text-fg-2">
+					Drag images toward the notch and it opens into a drop zone. The result lands next to the original, which
+					stays untouched.
+				</p>
+			</div>
+			<div class="mt-auto p-7">
+				<div class="flex flex-wrap gap-1.5">
+					{
+						['PNG', 'JPG', 'WebP', 'HEIC', 'Resize 50%', 'Compress'].map((label) => (
+							<span class="rounded-full bg-white/[0.08] px-3 py-1.5 text-[12px] font-semibold">{label}</span>
+						))
+					}
+				</div>
+				<p class="mt-4 font-mono text-[12px] text-fg-2">
+					photo.heic <span class="text-accent">→</span> photo-compressed.heic
+				</p>
+			</div>
+		</article>
+
+		<article class="flex flex-col overflow-hidden rounded-[22px] border border-line bg-raised md:col-span-2">
+			<div class="p-7 pb-0">
+				<h3 class="text-[21px] font-semibold tracking-tight">Live activities</h3>
+				<p class="mt-2 max-w-[52ch] text-[15px] leading-relaxed text-fg-2">
+					Timers and Pomodoro, what’s playing, volume and brightness, AirPods and Magic accessory battery. The most urgent
+					one takes the notch.
+				</p>
+			</div>
+			<div aria-hidden="true" class="mt-auto grid grid-cols-2 gap-3 p-7 sm:grid-cols-4">
+				<div class="flex h-9 items-center justify-between rounded-full bg-black px-3.5">
+					<TimerIcon size={15} weight="bold" />
+					<span class="font-mono text-[12px] text-white/85">24:12</span>
+				</div>
+				<div class="flex h-9 items-center justify-between rounded-full bg-black px-3.5">
+					<span class="size-4 rounded-[4px] bg-[linear-gradient(135deg,#ffb340,#ff6a00)]"></span>
+					<span class="flex h-3.5 items-end gap-[2px]">
+						{bars.map((b) => <span class="w-[2px] rounded-full bg-white/85" style={`height:${b * 100}%`} />)}
+					</span>
+				</div>
+				<div class="flex h-9 items-center gap-2.5 rounded-full bg-black px-3.5">
+					<span class="text-[11px] font-semibold text-white/70">Vol</span>
+					<span class="h-1 flex-1 overflow-hidden rounded-full bg-white/20">
+						<span class="block h-full w-[64%] rounded-full bg-white"></span>
+					</span>
+				</div>
+				<div class="flex h-9 items-center justify-between rounded-full bg-black px-3.5">
+					<span class="text-[12px] font-medium text-white/85">AirPods</span>
+					<span class="font-mono text-[12px] text-white/85">82%</span>
+				</div>
+			</div>
+		</article>
+
+		<article class="grid overflow-hidden rounded-[22px] border border-line bg-raised md:col-span-3 md:grid-cols-[1fr_1.4fr]">
+			<div class="p-7">
+				<h3 class="text-[21px] font-semibold tracking-tight">Lid closed, still there</h3>
+				<p class="mt-2 max-w-[44ch] text-[15px] leading-relaxed text-fg-2">
+					On an external display Perch floats as an island under the menu bar, and steps aside when menu bar icons reach
+					the middle. Open the lid and it moves back into the notch, no restart.
+				</p>
+			</div>
+			<div aria-hidden="true" class="grid gap-3 p-7 pt-0 sm:grid-cols-2 md:pt-7">
+				<figure class="overflow-hidden rounded-[14px] border border-line bg-[linear-gradient(180deg,#232327,#121214)]">
+					<div class="relative flex h-6 items-center justify-between bg-black/40 px-3 text-[10px] text-white/70">
+						<span>Finder File Edit</span><span>22:31</span>
+						<span class="absolute top-0 left-1/2 h-5 w-24 -translate-x-1/2 rounded-b-[8px] bg-black"></span>
+					</div>
+					<div class="h-24"></div>
+					<figcaption class="px-3 pb-3 text-[12px] text-fg-2">Built-in display: the notch</figcaption>
+				</figure>
+				<figure class="overflow-hidden rounded-[14px] border border-line bg-[linear-gradient(180deg,#232327,#121214)]">
+					<div class="flex h-6 items-center justify-between bg-black/40 px-3 text-[10px] text-white/70">
+						<span>Finder File Edit</span><span>22:31</span>
+					</div>
+					<div class="relative h-24">
+						<span class="absolute top-2 left-1/2 h-5 w-14 -translate-x-1/2 rounded-full bg-black shadow-[0_6px_16px_-6px_rgb(0_0_0/0.8)]"></span>
+					</div>
+					<figcaption class="px-3 pb-3 text-[12px] text-fg-2">External display: the island</figcaption>
+				</figure>
+			</div>
+		</article>
+	</div>
+</section>
