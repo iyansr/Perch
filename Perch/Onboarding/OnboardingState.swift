@@ -2,16 +2,8 @@ import ApplicationServices
 import AppKit
 import Observation
 
-/// How the onboarding card is presented.
-enum OnboardingMode: Equatable {
-    /// First launch: one step per page, ends with the "Press ⌥Space anytime" hint.
-    case firstRun
-    /// Pill context menu → Settings…: every step on one page.
-    case settings
-}
-
-/// One page of the flow. To add a step: add a case here, a title/summary below,
-/// and its body in `OnboardingStepBody`. Both modes pick it up from `allCases`.
+/// One page of the first-run flow. To add a step: add a case here, a title below,
+/// and its body in `OnboardingStepBody`.
 enum OnboardingStep: CaseIterable, Identifiable {
     case hotkey
     case accessibility
@@ -24,14 +16,6 @@ enum OnboardingStep: CaseIterable, Identifiable {
         case .hotkey: "Open Perch from anywhere"
         case .accessibility: "Allow pasting into other apps"
         case .agents: "Hear from your coding agents"
-        }
-    }
-
-    var settingsTitle: String {
-        switch self {
-        case .hotkey: "Shortcut"
-        case .accessibility: "Accessibility"
-        case .agents: "Agents"
         }
     }
 }
@@ -54,16 +38,11 @@ enum AccessibilityPermission {
 
 @Observable
 final class OnboardingState {
-    let mode: OnboardingMode
     let steps = OnboardingStep.allCases
     private(set) var index = 0
     private(set) var isAccessibilityTrusted = AccessibilityPermission.isTrusted
     /// The system prompt only appears once per request; afterwards the button opens System Settings.
     private(set) var didPromptAccessibility = false
-
-    init(mode: OnboardingMode) {
-        self.mode = mode
-    }
 
     var step: OnboardingStep { steps[index] }
     var isFirst: Bool { index == 0 }

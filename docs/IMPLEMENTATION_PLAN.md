@@ -14,12 +14,13 @@ Commit `60fc978` (scaffold) builds clean (`xcodebuild -scheme Perch`, Debug). Mo
 | Global hotkey | Partial: fixed ⌥Space, no user choice | `Hotkey/HotkeyManager.swift` |
 | App search, ↑↓ ↵ esc, click-outside close, recents | Done | `Search/AppIndex.swift`, `SearchEngine.swift` |
 | Inline math + units, web fallback | Done | `Search/Calculator.swift`, `UnitConverter.swift` |
+| System Settings panes in search (`wallpaper`, `dock`, `dark mode`) | Code + unit tests done: panes matched by title and aliases, shown with their own Settings icons, opened via `x-apple.systempreferences:` URLs; listed above apps when the pane match is stronger; panes missing on the running macOS are hidden. Manual check that each pane lands on the right page pending | `Search/SystemSettingsPane.swift`, `SearchEngine.swift` |
 | Search modes (chips replaced, decision 12) | Done: one sectioned root list; Commands open Clipboard History and Search Files | `SearchMode`, `PerchCommand` in `SearchEngine.swift`, `Search/FileSearch.swift` |
 | ActivityCenter + timer (`t 25m`), pause/resume, 8 s auto-dismiss, sound toggle | Done | `Activities/*` |
 | F2 Clipboard, F4 Drop-to-convert | Code + unit tests done; manual exit checks (J3, J4, Finder drag) pending | `Clipboard/*`, `Convert/*`, `Notch/DropZoneController.swift` |
 | F6 Agents: `perch` CLI, socket bridge, hook installer, terminal focus | Code + unit tests done; verified with a real `claude -p` session through Perch hooks; J6 tab focus and "connect on this machine" pending | `PerchCLI/`, `Shared/AgentEvent.swift`, `Agents/*` |
 | F5 Ask AI | Dropped from v0.1 (decision 11); the AI chip is removed too | — |
-| J1 Onboarding, hotkey recorder, settings | Done; step 3 (agents) added | `Onboarding/*`, `Hotkey/*`, `App/AppSettings.swift` |
+| J1 Onboarding, hotkey recorder, settings | Done; step 3 (agents) added; Settings is its own window (decision 13) | `Onboarding/*`, `Settings/*`, `Hotkey/*`, `App/AppSettings.swift` |
 | Unit test target | Done (`PerchTests`, 99 tests) | `PerchTests/` |
 | Signing, notarization, Sparkle, DMG | Not started | — |
 
@@ -40,7 +41,8 @@ Facts below came from inspecting this machine (Claude Code 2.1.312, codex-cli 0.
 9. **`SessionStart` only tracks the session.** A freshly opened agent waiting for its first prompt is not "running", so `SessionStart` shows nothing; the first `UserPromptSubmit` creates the row.
 10. **Codex `Interrupt` ends a turn.** Codex has no `Notification` / `StopFailure`; its `Interrupt` event (the user cancelled a turn) maps to done, so the row does not spin until the 30 min timeout.
 11. **Ask AI (F5) is dropped from v0.1.** Removed with it: the AI chip, the `.ask` result, Tab-to-ask, the onboarding/settings key step, Keychain storage and the `aiProvider` setting. The demo and acceptance matrix skip J5 / F5-a.
-12. **Chips are replaced by one list and commands (Tinycast/Raycast layout).** The root search shows one list grouped under section headers (Results, Applications, Commands, Web) with a right-aligned kind label and a footer action bar (`↵` primary action, `⌘↵` Reveal in Finder for files, esc). Built-in commands — Clipboard History, Search Files, Settings, Quit Perch — are matched like apps (title plus aliases, no loose subsequence hits). Clipboard History and Search Files push a mode, shown as a tag in front of the search field; esc or ⌫ on an empty query returns to the root list. The Home Clipboard module opens Clipboard History directly, so esc there returns Home. `clip ` still jumps to Clipboard History. The list shows as soon as search opens: with an empty query it lists recent apps (or the first apps found) and every command.
+12. **Chips are replaced by one list and commands (Tinycast/Raycast layout).** The root search shows one list grouped under section headers (Results, Applications, Commands, Web) with a right-aligned kind label and a footer action bar (`↵` primary action, `⌘↵` Reveal in Finder for files, esc). Built-in commands — Clipboard History, Search Files, Settings, Quit Perch — are matched like apps (title plus aliases, no loose subsequence hits). Clipboard History and Search Files push a mode, shown as a tag in front of the search field; esc or ⌫ on an empty query returns to the root list. The Home Clipboard module opens Clipboard History directly, so esc there returns Home. `clip ` still jumps to Clipboard History. The list shows as soon as search opens: with an empty query it lists Recent (recently launched apps), Applications (every other app, A–Z), then Commands.
+13. **Settings is a window, not the onboarding card (Tinycast layout).** A titled window with a sidebar (General, Clipboard, Agents, Permissions, About) and grouped rows: hotkey recorder and sounds; clipboard history toggle and Clear History; agent connect rows with the hook diff; Accessibility status, prompt and System Settings link; app version. It opens from a gear at the bottom left of Home, the pill menu's "Settings…" and the Settings command; each collapses the surface first. The onboarding card is first-run only.
 
 ## 2. Architecture additions
 
@@ -57,6 +59,7 @@ Perch/
                   HookInstaller.swift, OrderedJSON.swift (key-order-preserving JSON), UnifiedDiff.swift,
                   TerminalFocuser.swift
   Onboarding/     OnboardingView.swift, OnboardingState.swift, AgentStepViews.swift
+  Settings/       SettingsWindowController.swift, SettingsView.swift (sidebar + row building blocks), SettingsPages.swift
 Shared/           AgentEvent.swift (wire format), compiled into the app and the CLI
 PerchCLI/         main.swift (`perch event`, `perch watch`)
 PerchTests/       unit tests; Fixtures/ holds hook payloads captured from Claude Code 2.1.312 and codex-cli 0.164.0
@@ -129,7 +132,7 @@ Order follows the PRD's 3-day schedule. Each task lists its exit check. The `Per
   3. Connect Claude Code / Codex, using the buttons from task 3.2. A diff sheet appears before any write.
 - ~~Optional: an API key field (task 3.4).~~ Dropped with Ask AI.
 - On finish, the card collapses into the notch with "Press ⌥Space anytime" for 2 s.
-- The pill's context menu gains "Settings…", which reopens the same card as a single settings page. This is the only settings surface, as the PRD scopes it.
+- Settings: see decision 13 (gear in Home, pill menu "Settings…", Settings command).
 - Exit: delete defaults → relaunch → full J1 flow on both notch and island.
 
 **1.4 Chips: Clipboard, Files (AI removed, decision 11)**

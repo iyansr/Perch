@@ -213,7 +213,7 @@ private struct SurfaceMenu: View {
     let controller: NotchController
 
     var body: some View {
-        Button("Settings…") { controller.showOnboarding(.settings) }
+        Button("Settings…") { controller.openSettings() }
         Divider()
         Toggle("Play Sounds", isOn: $settings.playsSounds)
         Divider()

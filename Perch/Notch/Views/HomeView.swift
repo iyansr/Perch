@@ -78,6 +78,16 @@ private struct HomeModules: View {
                 ConvertModule(center: model.activities)
             }
             .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Button { controller.openSettings() } label: {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 13, weight: .medium))
+                }
+                .buttonStyle(BarButtonStyle())
+                .help("Settings")
+                .accessibilityLabel("Settings")
+                Spacer()
+            }
         }
     }
 }

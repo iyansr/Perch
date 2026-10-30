@@ -100,8 +100,9 @@ Every feature lives inside the same command panel or the same live activity slot
 
 - Opens with a global hotkey (chosen by the user at first launch, ⌥Space suggested), from Home's Search or Clipboard module, or by typing in Home. Clicking the notch/island opens Home, not search.
 - Searches installed apps; ↵ launches, ↑↓ move, esc closes, click outside closes
+- Searches System Settings panes by name or the settings they hold (`wallpaper`, `dock`, `dark mode`); ↵ opens the pane
 - Chips switch mode: All, Apps, Clipboard, Files, AI
-- Fallback row: "Search the web for …"
+- Fallback rows: "Search the web for …" and "Search files for …" (opens Search Files with the query)
 - Inline answers for math and unit conversion (`24*7`, `5 km to mi`)
 
 Acceptance: panel visible within 100 ms; first keystroke lands in the field with no extra click; the frontmost app keeps its menu bar.

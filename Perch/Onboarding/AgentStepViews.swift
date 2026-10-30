@@ -1,16 +1,25 @@
 import SwiftUI
 
-/// Onboarding step 3 / Settings "Agents": connect Claude Code and Codex. Nothing is written before the
+/// Onboarding step 3: connect Claude Code and Codex. Nothing is written before the
 /// user has seen the diff and pressed Connect.
 struct AgentsStepBody: View {
-    private let connections = AgentConnections.shared
-
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Perch shows when Claude Code or Codex needs your input or finishes. Connecting adds Perch's hooks to the agent's config; your other hooks stay as they are.")
                 .font(.system(size: 13))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            AgentConnectionList()
+        }
+    }
+}
+
+/// One row per agent with its connect button, or the pending hook diff. Shared by onboarding and Settings → Agents.
+struct AgentConnectionList: View {
+    private let connections = AgentConnections.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
             if let change = connections.pending {
                 HookDiffView(change: change, connections: connections)
             } else {

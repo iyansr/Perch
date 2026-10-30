@@ -76,7 +76,7 @@ final class NotchController {
     func toggle() {
         switch model.state {
         case .open: close()
-        case .onboarding: if model.onboarding?.mode == .settings { finishOnboarding() }
+        case .onboarding: break
         case .dropZone: dropZone.cancelChoosing(restoreFocus: true)
         case .idle, .glance, .home: open()
         }
@@ -101,6 +101,12 @@ final class NotchController {
     func showHomePage(_ page: HomePage) {
         guard model.state == .home else { return }
         withAnimation(NotchMotion.homePage) { model.homePage = page }
+    }
+
+    /// Home's gear, the pill menu and the Settings command: the surface collapses and the Settings window comes up.
+    func openSettings() {
+        close(restoreFocus: false)
+        SettingsWindowController.shared.show()
     }
 
     /// Opens the command panel. From Home it keeps the app captured when Home opened and remembers to return there.
@@ -167,20 +173,20 @@ final class NotchController {
             model.pulse()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { [weak self] in
                 guard let self, !AppSettings.shared.onboardingDone else { return }
-                showOnboarding(.firstRun)
+                showOnboarding()
             }
         }
     }
 
-    /// Drops the onboarding card (first run) or the single settings page (pill menu → Settings…).
-    func showOnboarding(_ mode: OnboardingMode) {
+    /// Drops the first-run card from the notch.
+    private func showOnboarding() {
         guard model.state != .onboarding else { return }
         if model.state != .open, model.state != .home {
             let frontmost = NSWorkspace.shared.frontmostApplication
             previousApp = frontmost == .current ? nil : frontmost
         }
         model.hint = nil
-        model.onboarding = OnboardingState(mode: mode)
+        model.onboarding = OnboardingState()
         panel.makeKeyAndOrderFront(nil)
         withAnimation(NotchMotion.expand) {
             model.state = .onboarding
@@ -189,20 +195,18 @@ final class NotchController {
         updateHover()
     }
 
-    /// Collapses the card. After the first run it also records completion and shows "Press <hotkey> anytime".
+    /// Collapses the card, records completion and shows "Press <hotkey> anytime".
     func finishOnboarding() {
         guard model.state == .onboarding else { return }
-        let firstRun = model.onboarding?.mode == .firstRun
-        if firstRun { AppSettings.shared.onboardingDone = true }
+        AppSettings.shared.onboardingDone = true
         let hint = "Press \(AppSettings.shared.hotkey.displayString) anytime"
         withAnimation(NotchMotion.collapse) {
             model.state = .idle
             model.isHovering = false
-            if firstRun { model.hint = hint }
+            model.hint = hint
         }
         if panel.isKeyWindow { returnKeyboardFocus() }
         updateHover()
-        guard firstRun else { return }
         // 2 s on screen after the 0.6 s collapse morph.
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) { [weak self] in
             guard let self, model.hint == hint else { return }
@@ -228,7 +232,7 @@ final class NotchController {
 
     func run(_ result: SearchResult) {
         switch result {
-        case let .app(app):
+        case let .app(app, _):
             model.search.recordLaunch(of: app)
             close(restoreFocus: false)
             NSWorkspace.shared.openApplication(at: app.url, configuration: NSWorkspace.OpenConfiguration())
@@ -242,6 +246,11 @@ final class NotchController {
         case let .file(url):
             close(restoreFocus: false)
             NSWorkspace.shared.open(url)
+        case let .setting(pane):
+            close(restoreFocus: false)
+            NSWorkspace.shared.open(pane.url)
+        case let .fileSearch(query):
+            model.push(.files, query: query)
         case let .clip(item):
             runClip(item, .paste)
         case let .web(query):
@@ -262,7 +271,7 @@ final class NotchController {
         case .searchFiles:
             model.push(.files)
         case .settings:
-            showOnboarding(.settings)
+            openSettings()
         case .quit:
             NSApp.terminate(nil)
         }

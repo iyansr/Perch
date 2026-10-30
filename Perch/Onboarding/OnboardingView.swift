@@ -8,19 +8,17 @@ struct OnboardingHeader: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: state.mode == .firstRun ? "hand.wave.fill" : "gearshape.fill")
+            Image(systemName: "hand.wave.fill")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.75))
-            Text(state.mode == .firstRun ? "Welcome to Perch" : "Settings")
+            Text("Welcome to Perch")
                 .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(.white)
             Spacer()
-            if state.mode == .firstRun {
-                Text("\(state.index + 1) of \(state.steps.count)")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.55))
-                    .monospacedDigit()
-            }
+            Text("\(state.index + 1) of \(state.steps.count)")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.white.opacity(0.55))
+                .monospacedDigit()
         }
         .padding(.leading, 16)
         .padding(.trailing, 16)
@@ -61,41 +59,27 @@ struct OnboardingHint: View {
     }
 }
 
-/// Frosted card under the surface. First run steps through `state.steps`; settings shows all of them at once.
+/// Frosted card under the surface: the first-run flow, one step per page.
 struct OnboardingCard: View {
     let model: NotchModel
     let state: OnboardingState
     let controller: NotchController
-    @FocusState private var pageFocused: Bool
-    @State private var settingsHeight: CGFloat = 0
-
-    /// Room left in the window under the surface: card padding (36), the Done row (54) and a margin.
-    private var settingsMaxHeight: CGFloat {
-        max(200, NotchGeometry.windowSize.height - model.panelTop - 36 - 54 - 24)
-    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            switch state.mode {
-            case .firstRun: stepPage
-            case .settings: settingsPage
+        stepPage
+            .padding(18)
+            .frame(width: NotchGeometry.panelWidth)
+            .background {
+                VisualEffectBackground()
+                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
             }
-        }
-        .padding(18)
-        .frame(width: NotchGeometry.panelWidth)
-        .background {
-            VisualEffectBackground()
-                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        }
-        .overlay {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .strokeBorder(.white.opacity(0.35))
-        }
-        .shadow(color: .black.opacity(0.3), radius: 30, y: 20)
-        .onGeometryChange(for: CGFloat.self, of: \.size.height) { model.panelHeight = $0 }
+            .overlay {
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .strokeBorder(.white.opacity(0.35))
+            }
+            .shadow(color: .black.opacity(0.3), radius: 30, y: 20)
+            .onGeometryChange(for: CGFloat.self, of: \.size.height) { model.panelHeight = $0 }
     }
-
-    // MARK: First run
 
     private var stepPage: some View {
         let step = state.step
@@ -136,62 +120,9 @@ struct OnboardingCard: View {
             withAnimation(.smooth(duration: 0.25)) { state.advance() }
         }
     }
-
-    // MARK: Settings
-
-    @ViewBuilder
-    private var settingsPage: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Scrolls once the sections outgrow the window (e.g. while a hook diff is open).
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(state.steps.enumerated()), id: \.element) { index, step in
-                        if index > 0 { Divider().padding(.vertical, 12) }
-                        Text(step.settingsTitle)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                            .padding(.bottom, 8)
-                        OnboardingStepBody(step: step, state: state)
-                    }
-                    Divider().padding(.vertical, 12)
-                    SoundsToggle()
-                }
-                .onGeometryChange(for: CGFloat.self, of: \.size.height) { settingsHeight = $0 }
-            }
-            .scrollIndicators(.automatic)
-            .frame(height: min(settingsHeight, settingsMaxHeight))
-            HStack {
-                Spacer()
-                Button("Done") { controller.finishOnboarding() }
-                    .buttonStyle(.borderedProminent)
-                    .keyboardShortcut(.defaultAction)
-                    .controlSize(.large)
-            }
-            .padding(.top, 14)
-        }
-        // Esc closes the page. The recorder's key monitor swallows Esc while recording, so it never reaches here then.
-        .focusable()
-        .focusEffectDisabled()
-        .focused($pageFocused)
-        .onAppear { pageFocused = true }
-        .onKeyPress(.escape) {
-            controller.finishOnboarding()
-            return .handled
-        }
-    }
 }
 
-private struct SoundsToggle: View {
-    @Bindable private var settings = AppSettings.shared
-
-    var body: some View {
-        Toggle("Play sounds", isOn: $settings.playsSounds)
-            .toggleStyle(.switch)
-            .font(.system(size: 13))
-    }
-}
-
-/// The content of one step. Shared by the stepped first-run flow and the single settings page.
+/// The content of one first-run step.
 private struct OnboardingStepBody: View {
     let step: OnboardingStep
     let state: OnboardingState

@@ -159,8 +159,9 @@ struct CommandPanelView: View {
 extension NotchModel {
     func icon(for result: SearchResult) -> NSImage? {
         switch result {
-        case let .app(app): search.icon(for: app)
+        case let .app(app, _): search.icon(for: app)
         case let .file(url): search.fileIcon(for: url)
+        case let .setting(pane): search.icon(for: pane)
         default: nil
         }
     }
@@ -228,7 +229,9 @@ struct ResultIcon: View {
         case .answer: ("equal", Color(red: 0.12, green: 0.62, blue: 0.53))
         case .timer: ("timer", .orange)
         case .web: ("globe", Color(red: 0.04, green: 0.56, blue: 0.84))
+        case .fileSearch: (PerchCommand.searchFiles.symbol, .gray)
         case .file: ("doc", .gray)
+        case let .setting(pane): (pane.symbol, .gray)
         case .clip: ("doc.on.clipboard", .gray)
         case let .command(command): (command.symbol, .gray)
         }

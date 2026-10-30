@@ -16,7 +16,7 @@ enum SearchMode: Equatable {
 
     var placeholder: String {
         switch self {
-        case .root: "Search for apps and commands…"
+        case .root: "Search for apps, settings and commands…"
         case .clipboard: "Search clipboard history…"
         case .files: "Search files…"
         }
@@ -76,32 +76,42 @@ enum PerchCommand: CaseIterable {
 /// Header a run of rows sits under in the results list.
 enum ResultSection: String {
     case results = "Results"
+    case recent = "Recent"
     case applications = "Applications"
+    case settings = "System Settings"
     case commands = "Commands"
-    case web = "Web"
+    /// Fallback rows that hand the query to another search: the web, or Search Files.
+    case search = "Search"
     case files = "Files"
     case clipboard = "Clipboard"
 }
 
 enum SearchResult: Identifiable, Equatable {
-    case app(AppEntry)
+    /// `isRecent` puts the row under "Recent" in the empty-query list.
+    case app(AppEntry, isRecent: Bool = false)
     /// Inline math or unit answer; ↵ copies `value`.
     case answer(expression: String, value: String)
     case timer(TimeInterval)
     case web(String)
     /// ↵ opens, ⌘↵ reveals in Finder.
     case file(URL)
+    /// System Settings pane; ↵ opens it.
+    case setting(SystemSettingsPane)
+    /// Fallback row; ↵ opens Search Files with the query.
+    case fileSearch(String)
     /// Clipboard history row; ↵ pastes, ⌘↵ copies.
     case clip(ClipboardItem)
     case command(PerchCommand)
 
     var id: String {
         switch self {
-        case let .app(app): "app:\(app.url.path)"
+        case let .app(app, _): "app:\(app.url.path)"
         case let .answer(expression, _): "answer:\(expression)"
         case let .timer(duration): "timer:\(duration)"
         case let .web(query): "web:\(query)"
         case let .file(url): "file:\(url.path)"
+        case let .setting(pane): "setting:\(pane.identifier)"
+        case let .fileSearch(query): "filesearch:\(query)"
         case let .clip(item): "clip:\(item.id)"
         case let .command(command): "command:\(command)"
         }
@@ -109,11 +119,13 @@ enum SearchResult: Identifiable, Equatable {
 
     var title: String {
         switch self {
-        case let .app(app): app.name
+        case let .app(app, _): app.name
         case let .answer(expression, value): "\(expression) = \(value)"
         case let .timer(duration): "Start \(TimerCommand.label(for: duration)) timer"
         case let .web(query): "Search the web for “\(query)”"
         case let .file(url): url.lastPathComponent
+        case let .setting(pane): pane.title
+        case let .fileSearch(query): "Search files for “\(query)”"
         case let .clip(item): item.previewText
         case let .command(command): command.title
         }
@@ -127,6 +139,8 @@ enum SearchResult: Identifiable, Equatable {
         case .timer: "Command"
         case .web: "Web Search"
         case .file: "File"
+        case .setting: "System Settings"
+        case .fileSearch: "File Search"
         case .clip(let item): item.kindLabel
         case .command: "Command"
         }
@@ -135,10 +149,11 @@ enum SearchResult: Identifiable, Equatable {
     var section: ResultSection {
         switch self {
         case .answer, .timer: .results
-        case .app: .applications
+        case let .app(_, isRecent): isRecent ? .recent : .applications
         case .command: .commands
-        case .web: .web
+        case .web, .fileSearch: .search
         case .file: .files
+        case .setting: .settings
         case .clip: .clipboard
         }
     }
@@ -146,10 +161,11 @@ enum SearchResult: Identifiable, Equatable {
     /// What ↵ does, shown inline after the query ("tide pools — Open").
     var actionTitle: String {
         switch self {
-        case .app, .file: "Open"
+        case .app, .file, .setting: "Open"
         case .answer: "Copy"
         case .timer: "Start Timer"
         case .web: "Search Web"
+        case .fileSearch: "Search Files"
         case .clip: "Paste"
         case .command(.quit): "Quit"
         case .command: "Open Command"
@@ -165,10 +181,15 @@ final class SearchEngine {
     let files = FileSearch()
     private var icons: [URL: NSImage] = [:]
     private var recentPaths: [String]
+    /// Installed settings extensions by bundle identifier; empty until the first scan lands.
+    private var settingsBundles: [String: URL] = [:]
 
     init() {
         recentPaths = UserDefaults.standard.stringArray(forKey: Self.recentsKey) ?? []
         index.refreshIfStale()
+        Task {
+            settingsBundles = await Task.detached(priority: .utility) { SystemSettingsPane.installedBundles() }.value
+        }
     }
 
     /// Work the user is waiting on: a Spotlight file query, or the first app scan (later rescans keep old results).
@@ -177,7 +198,9 @@ final class SearchEngine {
     }
 
     /// Root results are grouped by `SearchResult.section`, in the order the list shows them:
-    /// answers, applications, commands, then the web fallback. An empty query lists recent apps and every command.
+    /// answers, applications, System Settings panes, commands, then the web and file-search fallbacks. Settings
+    /// move above applications when their best match is stronger, so "wallpaper" opens the pane, not a fuzzy app hit.
+    /// An empty query lists recent apps and every command.
     func results(for rawQuery: String, mode: SearchMode) -> [SearchResult] {
         let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         if mode == .files {
@@ -189,9 +212,12 @@ final class SearchEngine {
             return ClipboardStore.shared.search(query, filter: ClipboardPanelState.shared.filter).map(SearchResult.clip)
         }
         guard !query.isEmpty else {
+            // Recent apps, then every other app A–Z (the index is sorted), then every command.
             let recents = recentPaths.compactMap { path in index.apps.first { $0.url.path == path } }
-            let apps = recents.isEmpty ? Array(index.apps.prefix(Self.maxRecents)) : recents
-            return apps.map(SearchResult.app) + PerchCommand.allCases.map(SearchResult.command)
+            let recentURLs = Set(recents.map(\.url))
+            return recents.map { .app($0, isRecent: true) }
+                + index.apps.filter { !recentURLs.contains($0.url) }.map { .app($0) }
+                + PerchCommand.allCases.map(SearchResult.command)
         }
 
         var results: [SearchResult] = []
@@ -209,9 +235,20 @@ final class SearchEngine {
         let ranked = index.apps
             .compactMap { app in app.score(for: lower).map { (app, $0 + recencyBoost(for: app)) } }
             .sorted { $0.1 != $1.1 ? $0.1 > $1.1 : $0.0.name < $1.0.name }
-        results += ranked.prefix(8).map { .app($0.0) }
+        let apps = ranked.prefix(8).map { SearchResult.app($0.0) }
+        // Panes missing on this macOS version are dropped once the extension scan has landed.
+        let settings = SystemSettingsPane.matches(lower)
+            .filter { settingsBundles.isEmpty || settingsBundles[$0.pane.identifier] != nil }
+            .prefix(5)
+        let panes = settings.map { SearchResult.setting($0.pane) }
+        if let topSetting = settings.first?.score, topSetting > ranked.first?.1 ?? 0 {
+            results += panes + apps
+        } else {
+            results += apps + panes
+        }
         results += PerchCommand.matches(lower).map(SearchResult.command)
         results.append(.web(query))
+        results.append(.fileSearch(query))
         return results
     }
 
@@ -234,6 +271,12 @@ final class SearchEngine {
         let icon = NSWorkspace.shared.icon(forFile: url.path)
         icons[url] = icon
         return icon
+    }
+
+    /// The pane's own System Settings icon, or nil (symbol tile) when its extension wasn't found.
+    func icon(for pane: SystemSettingsPane) -> NSImage? {
+        guard let url = settingsBundles[pane.identifier] else { return nil }
+        return fileIcon(for: url)
     }
 
     private func recencyBoost(for app: AppEntry) -> Int {

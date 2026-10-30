@@ -12,7 +12,7 @@ enum NotchState: Equatable {
     case home
     /// Command panel with search field and results. Opened by the hotkey, a Home module, or typing in Home.
     case open
-    /// First-run flow or settings card; the surface is sized like `.open`.
+    /// First-run flow; the surface is sized like `.open`.
     case onboarding
     /// A file drag is under way: the "Drop to convert" target, then the conversion action list after a drop.
     case dropZone
@@ -76,7 +76,7 @@ final class NotchModel {
     var panelHeight: CGFloat = 0
     /// Name of the app that had focus when the panel opened; paste targets it.
     var pasteTargetName: String?
-    /// Onboarding / settings flow behind `.onboarding`. Kept after the card closes so its exit transition has content.
+    /// First-run flow behind `.onboarding`. Kept after the card closes so its exit transition has content.
     var onboarding: OnboardingState?
     /// Drag/drop session behind `.dropZone`. Kept after the zone closes so its exit transition has content.
     var drop: DropSession?
@@ -116,20 +116,20 @@ final class NotchModel {
         setMode(mode, returnsToRoot: false)
     }
 
-    /// Opens a command's mode from the root list.
-    func push(_ mode: SearchMode) {
-        setMode(mode, returnsToRoot: true)
+    /// Opens a command's mode from the root list, optionally carrying a query over (the Search Files fallback row).
+    func push(_ mode: SearchMode, query: String = "") {
+        setMode(mode, returnsToRoot: true, query: query)
     }
 
     func popToRoot() {
         setMode(.root, returnsToRoot: false)
     }
 
-    /// Clears the query and refreshes once for the new mode.
-    private func setMode(_ newMode: SearchMode, returnsToRoot: Bool) {
+    /// Sets the query for the new mode (empty by default) and refreshes once.
+    private func setMode(_ newMode: SearchMode, returnsToRoot: Bool, query newQuery: String = "") {
         mode = newMode
         modeReturnsToRoot = returnsToRoot
-        if query.isEmpty { refreshResults() } else { query = "" }
+        if query == newQuery { refreshResults() } else { query = newQuery }
     }
 
     /// - Parameter keepingSelection: after a store change, stay on the same row when it still exists.
