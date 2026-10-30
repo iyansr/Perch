@@ -26,10 +26,18 @@ struct Activity: Identifiable, Equatable {
         case nowPlaying(bundleID: String)
         case hud(HUDKind)
         case deviceBattery(address: String)
+        case meeting(eventID: String)
+        case privacy(PrivacySensor)
+        case download(path: String)
     }
 
     enum HUDKind: Equatable {
-        case volume, brightness, keyboardBacklight
+        case volume, brightness, keyboardBacklight, capsLock
+    }
+
+    /// Hardware that shows a chip while any app uses it.
+    enum PrivacySensor: Equatable {
+        case camera, microphone
     }
 
     /// How long an activity may hold the slot.
@@ -61,6 +69,10 @@ struct Activity: Identifiable, Equatable {
     var media: NowPlaying?
     /// Connected devices with their charge; the connecting device first.
     var batteries: [DeviceBattery] = []
+    /// A two-button question (agent permission request) the card answers; nil once answered or abandoned.
+    var decision: PendingDecision?
+    /// Primary link the card opens, e.g. a meeting's join URL.
+    var link: ActivityLink?
 
     /// Lower holds the slot first: blocked > transient > failed > done > running > ambient.
     /// A transient flash (volume change) preempts the pill; whatever it covered returns when it drops.
@@ -91,6 +103,32 @@ struct TimerRun: Equatable {
 
     var phase: TimerPlan.Phase { plan.phases[phaseIndex] }
     var isLastPhase: Bool { phaseIndex == plan.phases.count - 1 }
+}
+
+/// A question the activity's card answers with two buttons (Deny / Allow).
+/// `id` routes the answer back to whoever asked, through `DecisionRouter`.
+struct PendingDecision: Equatable {
+    let id: String
+    var declineTitle = "Deny"
+    var acceptTitle = "Allow"
+}
+
+/// A link the card offers as its main action ("Join").
+struct ActivityLink: Equatable {
+    let title: String
+    let url: URL
+}
+
+/// Delivers a decision card's answer to the component that asked (the agent bridge).
+final class DecisionRouter {
+    static let shared = DecisionRouter()
+
+    /// Set by the owner of pending requests; called with the decision id and whether it was accepted.
+    var onAnswer: ((_ id: String, _ accepted: Bool) -> Void)?
+
+    func answer(_ decision: PendingDecision, accepted: Bool) {
+        onAnswer?(decision.id, accepted)
+    }
 }
 
 /// Shared queue of live activities. Owned by the app, so activities outlive the panel.
@@ -349,6 +387,18 @@ final class ActivityCenter {
             guard !Task.isCancelled else { return }
             self?.dismiss(id)
         }
+    }
+
+    /// Attaches or clears a decision; the row keeps its status (a cleared request stays `needsAttention`).
+    func setDecision(_ id: UUID, _ decision: PendingDecision?) {
+        guard let index = index(of: id) else { return }
+        items[index].decision = decision
+    }
+
+    /// Edits a source-owned activity in place, without finish feedback.
+    func update(_ id: UUID, _ change: (inout Activity) -> Void) {
+        guard let index = index(of: id) else { return }
+        change(&items[index])
     }
 
     func dismiss(_ id: UUID, animation: Animation = NotchMotion.collapse) {

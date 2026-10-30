@@ -1,73 +1,67 @@
 import AppKit
-import CoreGraphics
 
-/// Listens (never consumes) for the brightness and keyboard-backlight keys.
-/// They arrive as `NX_SYSDEFINED` aux-control events; on Apple silicon keyboards brightness also
-/// comes as a plain key-down with key codes 144/145. Needs Accessibility.
+/// Watches (never consumes) the brightness, keyboard-backlight and Caps Lock keys.
+/// Brightness/backlight arrive as `.systemDefined` aux-control events; on Apple silicon keyboards
+/// brightness also comes as a plain key-down with key codes 144/145. Caps Lock is a flags change
+/// with key code 57.
+///
+/// Uses NSEvent monitors, which macOS gates on Accessibility. A listen-only CGEvent tap was used before:
+/// macOS created it even without permission and then delivered nothing, so the retry never ran.
+/// The global monitor sees keys sent to other apps; the local one covers Perch's own panel.
 final class MediaKeyTap {
-    enum Key {
+    enum Key: Equatable {
         case brightness, keyboardBacklight
+        case capsLock(on: Bool)
     }
 
-    /// `NX_SYSDEFINED`; CGEventType has no case for it.
-    private static let systemDefined = CGEventType(rawValue: 14)!
     /// NX_KEYTYPE_* codes inside an aux-control event's `data1`.
     private static let auxKeys: [Int: Key] = [2: .brightness, 3: .brightness, 21: .keyboardBacklight, 22: .keyboardBacklight, 23: .keyboardBacklight]
-    private static let brightnessKeyCodes: Set<Int64> = [144, 145]
+    private static let brightnessKeyCodes: Set<UInt16> = [144, 145]
+    private static let capsLockKeyCode: UInt16 = 57
+    private static let mask: NSEvent.EventTypeMask = [.systemDefined, .keyDown, .flagsChanged]
 
-    private var tap: CFMachPort?
-    private var runLoopSource: CFRunLoopSource?
+    private var monitors: [Any] = []
     private let onKey: (Key) -> Void
 
     init(onKey: @escaping (Key) -> Void) {
         self.onKey = onKey
     }
 
-    var isRunning: Bool { tap != nil }
+    var isRunning: Bool { !monitors.isEmpty }
 
-    /// Returns false when the tap cannot be created, i.e. Accessibility is not granted yet.
+    /// Returns false while Accessibility is not granted: a global monitor installed then never receives keys.
     @discardableResult
     func start() -> Bool {
-        guard tap == nil else { return true }
-        let mask = (CGEventMask(1) << Self.systemDefined.rawValue) | (CGEventMask(1) << CGEventType.keyDown.rawValue)
-        let callback: CGEventTapCallBack = { _, type, event, refcon in
-            if let refcon {
-                let tap = Unmanaged<MediaKeyTap>.fromOpaque(refcon).takeUnretainedValue()
-                MainActor.assumeIsolated { tap.handle(type, event) }
-            }
-            return Unmanaged.passUnretained(event)
+        guard monitors.isEmpty else { return true }
+        guard AccessibilityPermission.isTrusted else { return false }
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: Self.mask, handler: { [weak self] event in
+            MainActor.assumeIsolated { self?.handle(event) }
+        }) {
+            monitors.append(global)
         }
-        guard let tap = CGEvent.tapCreate(
-            tap: .cgSessionEventTap,
-            place: .tailAppendEventTap,
-            options: .listenOnly,
-            eventsOfInterest: mask,
-            callback: callback,
-            userInfo: Unmanaged.passUnretained(self).toOpaque()
-        ) else { return false }
-        let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
-        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
-        CGEvent.tapEnable(tap: tap, enable: true)
-        self.tap = tap
-        runLoopSource = source
-        return true
+        if let local = NSEvent.addLocalMonitorForEvents(matching: Self.mask, handler: { [weak self] event in
+            self?.handle(event)
+            return event
+        }) {
+            monitors.append(local)
+        }
+        return !monitors.isEmpty
     }
 
     func stop() {
-        if let runLoopSource { CFRunLoopRemoveSource(CFRunLoopGetMain(), runLoopSource, .commonModes) }
-        if let tap { CFMachPortInvalidate(tap) }
-        tap = nil
-        runLoopSource = nil
+        monitors.forEach(NSEvent.removeMonitor)
+        monitors.removeAll()
     }
 
-    private func handle(_ type: CGEventType, _ event: CGEvent) {
-        switch type {
-        case .tapDisabledByTimeout, .tapDisabledByUserInput:
-            if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
+    private func handle(_ event: NSEvent) {
+        switch event.type {
         case .keyDown:
-            if Self.brightnessKeyCodes.contains(event.getIntegerValueField(.keyboardEventKeycode)) { onKey(.brightness) }
-        case Self.systemDefined:
-            guard let event = NSEvent(cgEvent: event), event.subtype.rawValue == 8 else { return }
+            if Self.brightnessKeyCodes.contains(event.keyCode) { onKey(.brightness) }
+        case .flagsChanged:
+            guard event.keyCode == Self.capsLockKeyCode else { return }
+            onKey(.capsLock(on: event.modifierFlags.contains(.capsLock)))
+        case .systemDefined:
+            guard event.subtype.rawValue == 8 else { return }
             let code = (event.data1 & 0xFFFF_0000) >> 16
             let isDown = (event.data1 & 0xFF00) >> 8 == 0xA
             if isDown, let key = Self.auxKeys[code] { onKey(key) }

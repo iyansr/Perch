@@ -17,7 +17,7 @@ struct AppSettingsTests {
         #expect(settings.playsSounds == true)
         #expect(settings.clipboardEnabled == true)
         // Sources that need a permission start off; they prompt when first enabled.
-        #expect(settings.enabledSources == ["nowPlaying"])
+        #expect(settings.enabledSources == ["nowPlaying", "privacy"])
         #expect(settings.replacesSystemHUD == false)
     }
 

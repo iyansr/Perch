@@ -43,6 +43,10 @@ struct NotchRootView: View {
         .onChange(of: model.interactiveRect) {
             if model.state == .open || model.state == .home { controller.updateHover() }
         }
+        // An answered or withdrawn decision releases the glance it was holding open.
+        .onChange(of: model.glanceShowsDecisionCard) { _, shows in
+            if !shows { controller.updateHover() }
+        }
     }
 }
 

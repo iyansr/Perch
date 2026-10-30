@@ -111,7 +111,8 @@ struct HookInstallerTests {
         try HookInstaller.installing(
             into: Data(text.utf8),
             events: target.events,
-            command: HookInstaller.command(helperPath: helperPath, source: target.agent)
+            helperPath: helperPath,
+            source: target.agent
         )
     }
 
@@ -154,12 +155,35 @@ struct HookInstallerTests {
         #expect(installed["hooks"]?["Stop"]?.arrayValue?.last?["matcher"] == nil)
     }
 
+    @Test func onlyPermissionRequestWaitsForAnAnswer() throws {
+        for (text, target) in [(claudeSettings, claude), (codexHooks, codex)] {
+            let timeouts = HookInstaller.installedTimeouts(in: try install(text, target))
+            let commands = HookInstaller.installedCommands(in: try install(text, target))
+            for event in target.events {
+                let awaiting = event == "PermissionRequest"
+                #expect(timeouts[event] == [awaiting ? 120 : 5], "\(target.agent) \(event)")
+                #expect(commands[event]?.first?.hasSuffix(awaiting ? " --await || true" : "event --source \(target.agent.rawValue) || true") == true)
+            }
+        }
+        #expect(HookInstaller.command(helperPath: helper, source: .claude, awaiting: true)
+            == #"P='\#(helper)'; [ -x "$P" ] && "$P" event --source claude --await || true"#)
+    }
+
+    @Test func reinstallRaisesAnOldPermissionRequestTimeoutAndCommand() throws {
+        let current = try install(claudeSettings, claude)
+        let old = Data(String(decoding: current, as: UTF8.self)
+            .replacingOccurrences(of: "\"timeout\": 120", with: "\"timeout\": 5")
+            .replacingOccurrences(of: " --await", with: "").utf8)
+        #expect(HookInstaller.installedTimeouts(in: old)["PermissionRequest"] == [5])
+        let updated = try HookInstaller.installing(into: old, events: claude.events, helperPath: helper, source: .claude)
+        #expect(updated == current)
+    }
+
     @Test func secondInstallIsANoOp() throws {
         for (text, target) in [(claudeSettings, claude), (codexHooks, codex)] {
             let once = try install(text, target)
             let twice = try HookInstaller.installing(
-                into: once, events: target.events,
-                command: HookInstaller.command(helperPath: helper, source: target.agent)
+                into: once, events: target.events, helperPath: helper, source: target.agent
             )
             #expect(once == twice)
         }
@@ -181,7 +205,7 @@ struct HookInstallerTests {
         let first = try install(codexHooks, codex)
         let moved = try HookInstaller.installing(
             into: first, events: codex.events,
-            command: HookInstaller.command(helperPath: "/Users/me/Apps/Perch.app/Contents/Helpers/perch", source: .codex)
+            helperPath: "/Users/me/Apps/Perch.app/Contents/Helpers/perch", source: .codex
         )
         // Same group index, so Codex's trust key for the group stays put (its hash changes, so Codex asks again).
         #expect(HookInstaller.perchGroupIndex(in: moved, event: "Stop") == HookInstaller.perchGroupIndex(in: first, event: "Stop"))
@@ -191,9 +215,8 @@ struct HookInstallerTests {
     }
 
     @Test func installIntoMissingOrEmptyFile() throws {
-        let command = HookInstaller.command(helperPath: helper, source: .codex)
         for input in [nil, Data(), Data("\n".utf8)] {
-            let data = try HookInstaller.installing(into: input, events: codex.events, command: command)
+            let data = try HookInstaller.installing(into: input, events: codex.events, helperPath: helper, source: .codex)
             #expect(HookInstaller.installedCommands(in: data).count == codex.events.count)
             #expect(String(decoding: try HookInstaller.removing(from: data), as: UTF8.self) == "{}\n")
         }
@@ -258,7 +281,7 @@ struct HookInstallerFileTests {
 
         let new = try HookInstaller.installing(
             into: HookInstaller.read(target), events: target.events,
-            command: HookInstaller.command(helperPath: helper, source: .claude)
+            helperPath: helper, source: .claude
         )
         let backup = try #require(try HookInstaller.write(new, to: target, now: Date(timeIntervalSince1970: 0)))
 
@@ -282,7 +305,7 @@ struct HookInstallerFileTests {
 
         let new = try HookInstaller.installing(
             into: HookInstaller.read(target), events: target.events,
-            command: HookInstaller.command(helperPath: helper, source: .claude)
+            helperPath: helper, source: .claude
         )
         try HookInstaller.write(new, to: target)
 
@@ -309,6 +332,33 @@ struct HookInstallerFileTests {
         connections.prepareConnect(.codex)
         connections.confirmPending()
         #expect(connections.status(of: .codex) == .awaitingApproval)
+
+        // Hooks written before the permission buttons: the same Perch, but `PermissionRequest` has the old
+        // command and the 5 s timeout. Offered as an update, not a reconnect.
+        let current = try #require(HookInstaller.read(connections.target(for: .claude)))
+        let old = Data(String(decoding: current, as: UTF8.self)
+            .replacingOccurrences(of: "\"timeout\": 120", with: "\"timeout\": 5")
+            .replacingOccurrences(of: " --await", with: "").utf8)
+        try HookInstaller.write(old, to: connections.target(for: .claude))
+        connections.refresh()
+        #expect(connections.status(of: .claude) == .needsUpdate)
+        // Only the timeout is old (someone raised the command by hand): still an update.
+        let timeoutOnly = Data(String(decoding: current, as: UTF8.self)
+            .replacingOccurrences(of: "\"timeout\": 120", with: "\"timeout\": 5").utf8)
+        try HookInstaller.write(timeoutOnly, to: connections.target(for: .claude))
+        connections.refresh()
+        #expect(connections.status(of: .claude) == .needsUpdate)
+
+        try HookInstaller.write(old, to: connections.target(for: .claude))
+        connections.refresh()
+        connections.prepareConnect(.claude)
+        let update = try #require(connections.pending)
+        #expect(update.isUpdate)
+        #expect(update.diff.contains { $0.kind == .added && $0.text.contains("120") })
+        #expect(update.diff.contains { $0.kind == .removed && $0.text.contains("\"timeout\": 5") })
+        connections.confirmPending()
+        #expect(connections.status(of: .claude) == .connected)
+        #expect(HookInstaller.read(connections.target(for: .claude)) == current)
 
         // Another copy of Perch: reconnect needed.
         let other = AgentConnections(home: home, helperPath: "/elsewhere/Perch.app/Contents/Helpers/perch")

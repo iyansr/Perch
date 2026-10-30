@@ -38,9 +38,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func startAgentBridge(activities: ActivityCenter) {
         let sessions = AgentSessions(activities: activities)
         sessions.startPruning()
-        let bridge = AgentBridge { event in
-            DispatchQueue.main.async { MainActor.assumeIsolated { sessions.handle(event) } }
-        }
+        let bridge = AgentBridge(
+            onRequestEnded: { request in
+                DispatchQueue.main.async { MainActor.assumeIsolated { sessions.requestEnded(request) } }
+            },
+            onEvent: { event in
+                DispatchQueue.main.async { MainActor.assumeIsolated { sessions.handle(event) } }
+            }
+        )
+        // Allow / Deny on a permission card: sessions flip the row, the bridge answers the waiting `perch event --await`.
+        sessions.reply = { request, allow in bridge.reply(request: request, allow: allow) }
+        DecisionRouter.shared.onAnswer = { id, accepted in sessions.answer(request: id, allow: accepted) }
         do {
             try bridge.start()
         } catch {

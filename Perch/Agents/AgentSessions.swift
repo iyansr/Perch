@@ -18,16 +18,27 @@ final class AgentSessions {
     private struct Session {
         let activityID: UUID
         var lastSeen: Date
+        /// The `perch event --await` request whose Allow / Deny card is showing on this session's row.
+        var request: String?
+        /// What the row shows, kept to flip its status after an answer.
+        var event: AgentEvent?
     }
 
     private let activities: ActivityCenter
     private let now: () -> Date
+    /// Delivers an Allow / Deny to the helper waiting on a request (`AgentBridge.reply`).
+    var reply: (_ request: String, _ allow: Bool) -> Void
     private var sessions: [String: Session] = [:]
     private var pruneTimer: Timer?
 
-    init(activities: ActivityCenter, now: @escaping () -> Date = Date.init) {
+    init(
+        activities: ActivityCenter,
+        now: @escaping () -> Date = Date.init,
+        reply: @escaping (_ request: String, _ allow: Bool) -> Void = { _, _ in }
+    ) {
         self.activities = activities
         self.now = now
+        self.reply = reply
     }
 
     func startPruning() {
@@ -80,15 +91,50 @@ final class AgentSessions {
         }
         var session = sessions[key] ?? Session(activityID: UUID(), lastSeen: now())
         session.lastSeen = now()
+        // Any later event means the agent moved on (answered in its terminal, or timed out and asked there):
+        // the buttons would answer nothing. The row keeps its status.
+        if session.request != nil {
+            activities.setDecision(session.activityID, nil)
+            session.request = nil
+        }
         sessions[key] = session
 
         guard case let .status(status) = transition else { return }
+        session.event = event
+        sessions[key] = session
+        show(session, status: status)
+        if event.type == "permission_request", let request = event.request {
+            sessions[key]?.request = request
+            activities.setDecision(session.activityID, PendingDecision(id: request))
+        }
+    }
+
+    /// The Allow / Deny card for `request` was answered: tell the waiting helper, drop the buttons and show the
+    /// agent working again. Unknown or already-cleared requests do nothing.
+    func answer(request: String, allow: Bool) {
+        guard let (key, session) = sessions.first(where: { $0.value.request == request }) else { return }
+        sessions[key]?.request = nil
+        reply(request, allow)
+        activities.setDecision(session.activityID, nil)
+        show(session, status: .running, detail: allow ? "Allowed from Perch" : "Denied from Perch")
+    }
+
+    /// The helper waiting on `request` disconnected without an answer (its timeout, or the agent was answered in
+    /// its terminal): drop the buttons. The row stays `needsAttention`: the agent still wants the user.
+    func requestEnded(_ request: String) {
+        guard let (key, session) = sessions.first(where: { $0.value.request == request }) else { return }
+        sessions[key]?.request = nil
+        activities.setDecision(session.activityID, nil)
+    }
+
+    private func show(_ session: Session, status: Activity.Status, detail: String? = nil) {
+        guard let event = session.event else { return }
         activities.upsert(
             id: session.activityID,
             kind: .agent(source: event.source, sessionID: event.session),
             symbol: symbol(for: event.source),
             title: Self.title(for: event),
-            detail: Self.detail(for: event),
+            detail: detail ?? Self.detail(for: event),
             status: status,
             terminal: event.term
         )

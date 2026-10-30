@@ -557,6 +557,8 @@ final class NotchController {
             }
         case .glance:
             guard !inside else { return }
+            // A pending decision stays up until answered or withdrawn; NotchRootView re-runs this when it clears.
+            if model.glanceShowsDecisionCard { return }
             // The music card lingers, so a control click that drifts past the edge does not collapse it.
             guard model.glanceShowsMusicCard else {
                 collapseGlance()

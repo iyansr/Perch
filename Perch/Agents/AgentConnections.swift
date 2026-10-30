@@ -16,6 +16,8 @@ final class AgentConnections {
         case disconnected
         /// Perch entries exist but point at another copy of Perch or miss events.
         case needsReconnect
+        /// Perch's own entries, from before the permission buttons: `PermissionRequest` has the old command or timeout.
+        case needsUpdate
         /// Written, but Codex runs new hooks only after the user approves them in Codex.
         case awaitingApproval
         case connected
@@ -27,6 +29,8 @@ final class AgentConnections {
         let newData: Data
         let diff: [UnifiedDiff.Line]
         let path: String
+        /// Rewrites hooks Perch already installed ("Update Perch's hooks") instead of adding them.
+        var isUpdate = false
     }
 
     private(set) var statuses: [AgentSource: Status] = [:]
@@ -91,7 +95,8 @@ final class AgentConnections {
             let new = try HookInstaller.installing(
                 into: old,
                 events: target.events,
-                command: HookInstaller.command(helperPath: helperPath, source: agent)
+                helperPath: helperPath,
+                source: agent
             )
             errors[agent] = nil
             pending = PendingChange(
@@ -99,7 +104,8 @@ final class AgentConnections {
                 isRemoval: false,
                 newData: new,
                 diff: UnifiedDiff.lines(old: old.map { String(decoding: $0, as: UTF8.self) } ?? "", new: String(decoding: new, as: UTF8.self)),
-                path: displayPath(target.fileURL)
+                path: displayPath(target.fileURL),
+                isUpdate: statuses[agent] == .needsUpdate
             )
         } catch {
             errors[agent] = "Could not read \(displayPath(target.fileURL)): \(error)"
@@ -147,9 +153,23 @@ final class AgentConnections {
         let data = HookInstaller.read(target)
         let installed = HookInstaller.installedCommands(in: data)
         guard !installed.isEmpty else { return .disconnected }
-        let expected = HookInstaller.command(helperPath: helperPath, source: agent)
-        let complete = target.events.allSatisfy { installed[$0] == [expected] }
-        guard complete else { return .needsReconnect }
+        let timeouts = HookInstaller.installedTimeouts(in: data)
+
+        enum Entry { case current, outdated, other }
+        // An entry written before the permission buttons existed has the plain command and a 5 s timeout under
+        // `PermissionRequest`, so the agent would kill a helper that waits for the answer.
+        func entry(_ event: String) -> Entry {
+            let awaiting = HookInstaller.awaitingEvents.contains(event)
+            let current = HookInstaller.command(helperPath: helperPath, source: agent, event: event)
+            let plain = HookInstaller.command(helperPath: helperPath, source: agent)
+            if installed[event] == [current] {
+                return !awaiting || timeouts[event] == [HookInstaller.permissionTimeout] ? .current : .outdated
+            }
+            return awaiting && installed[event] == [plain] ? .outdated : .other
+        }
+        let entries = target.events.map(entry)
+        if entries.contains(.other) { return .needsReconnect }
+        if entries.contains(.outdated) { return .needsUpdate }
         if agent == .codex {
             let config = try? String(contentsOf: home.appending(path: ".codex/config.toml"), encoding: .utf8)
             var indexes: [String: Int] = [:]

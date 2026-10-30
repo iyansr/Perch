@@ -3,11 +3,15 @@ import Foundation
 
 // `perch` — the bridge between coding agents and Perch.app.
 //
-//   perch event --source claude|codex   Hook command: reads the hook JSON on stdin, forwards a summary.
+//   perch event --source claude|codex [--await]
+//                                        Hook command: reads the hook JSON on stdin, forwards a summary.
+//                                        --await (PermissionRequest hooks) then waits for Perch's answer and prints it.
 //   perch watch -- <cmd> [args…]         Runs <cmd>, reports start and exit; exits with <cmd>'s code.
 //
 // `event` runs inside agent hooks, so it fails open: it always exits 0, prints nothing, and gives up on
 // the socket after 200 ms. Perch not running, no socket, bad input: the agent never notices.
+// `event --await` is the one exception that blocks: up to `AgentReply.awaitSeconds` for the user's answer, and it
+// still fails open: no answer in time, no socket, Perch quitting → exit 0 with no output, so the agent asks itself.
 
 private let socketTimeoutMilliseconds: Int32 = 200
 private let shellNames: Set<String> = ["sh", "bash", "zsh", "fish", "dash", "ksh", "tcsh", "csh", "nu", "xonsh"]
@@ -22,7 +26,7 @@ case "watch":
     runWatch(Array(arguments.dropFirst()))
 default:
     FileHandle.standardError.write(Data("""
-    usage: perch event --source claude|codex   (hook command; reads the hook JSON on stdin)
+    usage: perch event --source claude|codex [--await]   (hook command; reads the hook JSON on stdin)
            perch watch -- <command> [arguments…]
 
     """.utf8))
@@ -37,11 +41,51 @@ private func runEvent(_ arguments: [String]) -> Never {
     guard let index = arguments.firstIndex(of: "--source"),
           arguments.indices.contains(index + 1),
           let source = AgentSource(rawValue: arguments[index + 1]),
-          let event = AgentEvent.fromHook(payload, source: source, term: currentTerminal()),
-          let line = event.encodedLine()
+          var event = AgentEvent.fromHook(payload, source: source, term: currentTerminal())
     else { exit(0) }
-    _ = send(line)
+
+    let awaiting = arguments.contains("--await")
+    if awaiting { event.request = UUID().uuidString }
+    guard let line = event.encodedLine(), let descriptor = connectAndSend(line) else { exit(0) }
+    defer { close(descriptor) }
+    if let request = event.request, let reply = awaitReply(on: descriptor, request: request) {
+        FileHandle.standardOutput.write(Data(reply.hookOutput.utf8))
+    }
     exit(0)
+}
+
+/// Seconds to wait for the answer: `AgentReply.awaitSeconds`, or the `PERCH_AWAIT_TIMEOUT` override.
+private func awaitSeconds() -> TimeInterval {
+    ProcessInfo.processInfo.environment[AgentReply.awaitEnvironmentKey].flatMap(TimeInterval.init) ?? AgentReply.awaitSeconds
+}
+
+/// Blocks until Perch answers `request` on `descriptor`. Nil on timeout, EOF (Perch quit, or dropped the request
+/// because the agent was answered another way) or a malformed line.
+private func awaitReply(on descriptor: Int32, request: String) -> AgentReply? {
+    let deadline = DispatchTime.now().uptimeNanoseconds + UInt64(max(0, awaitSeconds()) * 1_000_000_000)
+    var buffer = Data()
+    var chunk = [UInt8](repeating: 0, count: 4096)
+    while buffer.count <= 4096 {
+        let now = DispatchTime.now().uptimeNanoseconds
+        guard now < deadline else { return nil }
+        // Round up so a sub-millisecond remainder cannot spin.
+        let milliseconds = Int32(min((deadline - now) / 1_000_000 + 1, UInt64(Int32.max)))
+        var poller = pollfd(fd: descriptor, events: Int16(POLLIN), revents: 0)
+        let ready = poll(&poller, 1, milliseconds)
+        if ready < 0, errno == EINTR { continue }
+        guard ready > 0 else { return nil } // timeout or poll failure
+        let count = Darwin.read(descriptor, &chunk, chunk.count)
+        if count > 0 {
+            buffer.append(contentsOf: chunk[..<count])
+            if let newline = buffer.firstIndex(of: 0x0A) {
+                let reply = try? JSONDecoder().decode(AgentReply.self, from: buffer[buffer.startIndex..<newline])
+                return reply.flatMap { $0.request == request && $0.v <= AgentEvent.currentVersion ? $0 : nil }
+            }
+        } else if count == 0 || (errno != EAGAIN && errno != EINTR) {
+            return nil
+        }
+    }
+    return nil
 }
 
 // MARK: watch
@@ -179,15 +223,23 @@ private func processEntry(_ pid: pid_t) -> ProcessInfoEntry? {
 /// Writes `line` to Perch's socket (`PERCH_SOCKET` overrides the path, for tests).
 /// Gives up after 200 ms in total; never blocks the caller longer.
 private func send(_ line: Data) -> Bool {
+    guard let descriptor = connectAndSend(line) else { return false }
+    close(descriptor)
+    return true
+}
+
+/// `send`, but the connection stays open for the caller to read from; the caller closes it.
+private func connectAndSend(_ line: Data) -> Int32? {
     let path = ProcessInfo.processInfo.environment["PERCH_SOCKET"] ?? AgentEvent.socketURL.path
     var address = sockaddr_un()
     address.sun_family = sa_family_t(AF_UNIX)
     let capacity = MemoryLayout.size(ofValue: address.sun_path)
-    guard path.utf8.count < capacity else { return false }
+    guard path.utf8.count < capacity else { return nil }
 
     let descriptor = socket(AF_UNIX, SOCK_STREAM, 0)
-    guard descriptor >= 0 else { return false }
-    defer { close(descriptor) }
+    guard descriptor >= 0 else { return nil }
+    var connectedOK = false
+    defer { if !connectedOK { close(descriptor) } }
     var one: Int32 = 1
     setsockopt(descriptor, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
     _ = fcntl(descriptor, F_SETFL, fcntl(descriptor, F_GETFL) | O_NONBLOCK)
@@ -208,13 +260,13 @@ private func send(_ line: Data) -> Bool {
         }
     }
     if connected != 0 {
-        guard errno == EINPROGRESS, wait(for: Int16(POLLOUT), on: descriptor, milliseconds: remaining()) else { return false }
+        guard errno == EINPROGRESS, wait(for: Int16(POLLOUT), on: descriptor, milliseconds: remaining()) else { return nil }
         var error: Int32 = 0
         var length = socklen_t(MemoryLayout<Int32>.size)
-        guard getsockopt(descriptor, SOL_SOCKET, SO_ERROR, &error, &length) == 0, error == 0 else { return false }
+        guard getsockopt(descriptor, SOL_SOCKET, SO_ERROR, &error, &length) == 0, error == 0 else { return nil }
     }
 
-    return line.withUnsafeBytes { buffer -> Bool in
+    let sent = line.withUnsafeBytes { buffer -> Bool in
         var offset = 0
         while offset < buffer.count {
             let written = Darwin.write(descriptor, buffer.baseAddress! + offset, buffer.count - offset)
@@ -228,6 +280,8 @@ private func send(_ line: Data) -> Bool {
         }
         return true
     }
+    connectedOK = sent
+    return sent ? descriptor : nil
 }
 
 private func wait(for events: Int16, on descriptor: Int32, milliseconds: Int32) -> Bool {

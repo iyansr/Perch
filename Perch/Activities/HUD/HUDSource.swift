@@ -4,21 +4,22 @@ import CoreAudio
 import Observation
 import SwiftUI
 
-/// Volume, brightness and keyboard-backlight bars as 1.5 s flashes in the pill.
+/// Volume, brightness and keyboard-backlight bars as 1.5 s flashes in the pill, plus a 1 s Caps Lock chip.
 /// Volume comes from a CoreAudio listener, so it catches every change (keys, menu bar, apps) without
 /// a permission. Brightness and backlight have no change notification that excludes auto-brightness,
-/// so they follow the keys through `MediaKeyTap`, which needs Accessibility.
+/// so they follow the keys through `MediaKeyTap` (NSEvent monitors, Accessibility); Caps Lock shares it.
 final class HUDSource: ActivitySource {
     static let id = "hud"
     static let info = ActivitySourceInfo(
-        title: "Volume & Brightness",
-        detail: "A level bar in the pill when you change volume, display brightness or keyboard backlight.",
+        title: "Volume, Brightness & Caps Lock",
+        detail: "A level bar in the pill when you change volume, display brightness or keyboard backlight, and a chip when Caps Lock toggles.",
         symbol: "speaker.wave.2.fill",
         tint: .blue,
         permission: .accessibility
     )
 
     static let duration: Duration = .milliseconds(1500)
+    static let capsLockDuration: Duration = .seconds(1)
 
     private weak var center: ActivityCenter?
     private var device: AudioObjectID?
@@ -134,6 +135,12 @@ final class HUDSource: ActivitySource {
 
     /// The key fires before the system applies the change; read the level a moment later.
     private func keyPressed(_ key: MediaKeyTap.Key) {
+        if case let .capsLock(on) = key {
+            // The event already carries the new state.
+            flash(.capsLock, symbol: on ? "capslock.fill" : "capslock", title: "Caps Lock", level: on ? 1 : 0,
+                  detail: on ? "On" : "Off", duration: Self.capsLockDuration)
+            return
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { [weak self] in
             guard let self, isRunning else { return }
             switch key {
@@ -143,11 +150,16 @@ final class HUDSource: ActivitySource {
             case .keyboardBacklight:
                 guard let level = SystemLevels.keyboardBacklight() else { return }
                 flash(.keyboardBacklight, symbol: level == 0 ? "light.min" : "light.max", title: "Keyboard", level: level)
+            case .capsLock:
+                break
             }
         }
     }
 
-    private func flash(_ kind: Activity.HUDKind, symbol: String, title: String, level: Double, detail: String? = nil) {
+    private func flash(
+        _ kind: Activity.HUDKind, symbol: String, title: String, level: Double, detail: String? = nil,
+        duration: Duration = HUDSource.duration
+    ) {
         center?.flash(Activity(
             id: UUID(),
             kind: .hud(kind),
@@ -157,7 +169,7 @@ final class HUDSource: ActivitySource {
             status: .running,
             progress: .level(level),
             updatedAt: Date(),
-            presentation: .transient(Self.duration)
+            presentation: .transient(duration)
         ))
     }
 

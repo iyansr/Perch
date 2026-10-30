@@ -49,9 +49,11 @@ nonisolated struct AgentEvent: Codable, Equatable, Sendable {
     var exitCode: Int32?
     /// `perch watch` only, seconds.
     var duration: Double?
+    /// `perch event --await` only: the sender keeps the connection open and waits for an `AgentReply` with this id.
+    var request: String?
 
     enum CodingKeys: String, CodingKey {
-        case v, source, type, session, cwd, message, term, ts
+        case v, source, type, session, cwd, message, term, ts, request
         case exitCode = "exit_code"
         case duration
     }
@@ -133,5 +135,33 @@ nonisolated struct AgentEvent: Codable, Equatable, Sendable {
         let words = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
         guard words.count > maxMessageLength else { return words }
         return String(words.prefix(maxMessageLength - 1)) + "…"
+    }
+}
+
+/// The app's answer to an `AgentEvent` that carried a `request`; one JSON line back on the same connection.
+nonisolated struct AgentReply: Codable, Equatable, Sendable {
+    /// How long `perch event --await` waits for the answer. Claude Code's hook timeout (120 s) stays above it.
+    static let awaitSeconds: TimeInterval = 110
+    /// `perch event --await` waits this many seconds instead when set (tests).
+    static let awaitEnvironmentKey = "PERCH_AWAIT_TIMEOUT"
+
+    var v = AgentEvent.currentVersion
+    var request: String
+    var allow: Bool
+
+    /// One line of the wire format, newline included.
+    func encodedLine() -> Data? {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        guard var data = try? encoder.encode(self) else { return nil }
+        data.append(0x0A)
+        return data
+    }
+
+    /// What the hook prints so the agent takes the answer: a `PermissionRequest` decision.
+    /// Deny never sets `interrupt`, so the agent carries on and may try something else.
+    var hookOutput: String {
+        let decision = allow ? #"{"behavior": "allow"}"# : #"{"behavior": "deny", "message": "Denied from Perch"}"#
+        return #"{"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": \#(decision)}}"# + "\n"
     }
 }

@@ -15,7 +15,7 @@ final class AppSettings {
     }
 
     /// Activity sources on for a fresh install: the ones that need no permission.
-    static let defaultEnabledSources: Set<String> = ["nowPlaying"]
+    static let defaultEnabledSources: Set<String> = ["nowPlaying", "privacy"]
 
     @ObservationIgnored private let defaults: UserDefaults
 

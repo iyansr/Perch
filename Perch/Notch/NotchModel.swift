@@ -275,12 +275,18 @@ final class NotchModel {
         !activities.glanceItems.isEmpty
     }
 
+    /// A pending question leads the glance: the decision card replaces the rows.
+    var glanceShowsDecisionCard: Bool {
+        activities.glanceItems.first?.decision != nil
+    }
+
     /// The music card when music leads the glance, otherwise one row per activity.
     var glanceShowsMusicCard: Bool {
-        activities.glanceItems.first?.media != nil
+        !glanceShowsDecisionCard && activities.glanceItems.first?.media != nil
     }
 
     private var glanceContentHeight: CGFloat {
+        if glanceShowsDecisionCard { return DecisionCard.height }
         if glanceShowsMusicCard { return MusicCard.height }
         return CGFloat(min(activities.glanceItems.count, Self.glanceMaxRows)) * Self.glanceRowHeight + 16
     }

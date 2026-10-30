@@ -1,17 +1,19 @@
 import AppKit
 import CoreBluetooth
+import EventKit
 import Observation
 import SwiftUI
 
 /// A system permission an activity source depends on, and where it stands.
 enum SourcePermission: Equatable {
     enum Kind: Equatable {
-        case accessibility, bluetooth
+        case accessibility, bluetooth, calendar
 
         var title: String {
             switch self {
             case .accessibility: "Accessibility"
             case .bluetooth: "Bluetooth"
+            case .calendar: "Calendar"
             }
         }
 
@@ -21,6 +23,8 @@ enum SourcePermission: Equatable {
                 URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
             case .bluetooth:
                 URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Bluetooth")
+            case .calendar:
+                URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars")
             }
         }
 
@@ -34,6 +38,12 @@ enum SourcePermission: Equatable {
                 case .notDetermined: return .needed(self)
                 case .denied, .restricted: return .denied(self)
                 @unknown default: return .needed(self)
+                }
+            case .calendar:
+                switch EKEventStore.authorizationStatus(for: .event) {
+                case .fullAccess: return .granted(self)
+                case .notDetermined: return .needed(self)
+                default: return .denied(self) // denied, restricted, or write-only
                 }
             }
         }
@@ -79,7 +89,10 @@ final class ActivitySources {
     let nowPlaying = NowPlayingSource()
     let hud = HUDSource()
     let battery = BluetoothBatterySource()
-    var all: [any ActivitySource] { [nowPlaying, hud, battery] }
+    let meeting = MeetingSource()
+    let privacy = PrivacySource()
+    let downloads = DownloadsSource()
+    var all: [any ActivitySource] { [nowPlaying, hud, battery, meeting, privacy, downloads] }
     private var center: ActivityCenter?
     private var running: Set<String> = []
     private let settings = AppSettings.shared

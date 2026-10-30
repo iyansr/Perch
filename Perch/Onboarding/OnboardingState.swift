@@ -24,9 +24,27 @@ enum AccessibilityPermission {
     static var isTrusted: Bool { AXIsProcessTrusted() }
 
     /// Shows the system prompt that deep-links to Privacy & Security → Accessibility.
+    ///
+    /// macOS shows that prompt only for an app it has no Accessibility record for. A rebuilt dev copy
+    /// (ad-hoc signed, new code signature) keeps its old record, still switched on in System Settings
+    /// but no longer matching, so the prompt never appears and the button seems dead. Clearing Perch's
+    /// own record first makes the prompt appear and the new copy gets added; we are not trusted here,
+    /// so there is no working grant to lose.
     static func requestPrompt() {
+        guard !isTrusted else { return }
+        if let bundleID = Bundle.main.bundleIdentifier {
+            let reset = Process()
+            reset.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+            reset.arguments = ["reset", "Accessibility", bundleID]
+            reset.standardOutput = FileHandle.nullDevice
+            reset.standardError = FileHandle.nullDevice
+            try? reset.run()
+            reset.waitUntilExit()
+        }
         // `kAXTrustedCheckOptionPrompt`, spelled out because the C global is not concurrency-safe.
         _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
+        // macOS may still skip the prompt (e.g. it already showed this launch); the pane always opens.
+        openSystemSettings()
     }
 
     static func openSystemSettings() {

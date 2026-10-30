@@ -39,6 +39,11 @@ nonisolated enum HookInstaller {
     static let marker = "Perch.app/Contents/Helpers/perch"
     /// Seconds. The helper gives up on the socket after 200 ms; this only bounds a pathological hang.
     static let timeout = 5
+    /// Seconds the agent waits for a `PermissionRequest` hook: `perch event --await` holds the agent for up to
+    /// 110 s (`AgentReply.awaitSeconds`) while the user decides in Perch, so this stays above that.
+    static let permissionTimeout = 120
+    /// Events whose hook waits for Perch's answer (`perch event --await`).
+    static let awaitingEvents: Set<String> = ["PermissionRequest"]
     private static let toolEvents: Set<String> = ["PermissionRequest", "PostToolUse", "PreToolUse"]
 
     enum InstallError: Error, CustomStringConvertible {
@@ -50,17 +55,29 @@ nonisolated enum HookInstaller {
         }
     }
 
-    /// `P='…/perch'; [ -x "$P" ] && "$P" event --source claude || true`
-    static func command(helperPath: String, source: AgentSource) -> String {
+    /// `P='…/perch'; [ -x "$P" ] && "$P" event --source claude || true` (`--await` before `|| true` when `awaiting`).
+    static func command(helperPath: String, source: AgentSource, awaiting: Bool = false) -> String {
         let quoted = "'" + helperPath.replacingOccurrences(of: "'", with: "'\\''") + "'"
-        return "P=\(quoted); [ -x \"$P\" ] && \"$P\" event --source \(source.rawValue) || true"
+        let flag = awaiting ? " --await" : ""
+        return "P=\(quoted); [ -x \"$P\" ] && \"$P\" event --source \(source.rawValue)\(flag) || true"
+    }
+
+    /// The command Perch installs under `event`.
+    static func command(helperPath: String, source: AgentSource, event: String) -> String {
+        command(helperPath: helperPath, source: source, awaiting: awaitingEvents.contains(event))
+    }
+
+    /// The timeout Perch installs under `event`.
+    static func timeout(for event: String) -> Int {
+        awaitingEvents.contains(event) ? permissionTimeout : timeout
     }
 
     // MARK: Pure transforms
 
     /// The config with Perch's hooks for `events`; Perch entries under any other event are removed.
-    /// An existing Perch entry with a different command (the app moved) is updated in place.
-    static func installing(into data: Data?, events: [String], command: String) throws -> Data {
+    /// An existing Perch entry with a different command (the app moved) is updated in place; so is its timeout
+    /// for events that wait for an answer.
+    static func installing(into data: Data?, events: [String], helperPath: String, source: AgentSource) throws -> Data {
         var root = try parseRoot(data)
         guard case var .object(rootMembers) = root else { throw InstallError.notAnObject("The file") }
 
@@ -78,11 +95,15 @@ nonisolated enum HookInstaller {
         }
 
         for event in events {
-            let group = perchGroup(event: event, command: command)
+            let line = command(helperPath: helperPath, source: source, event: event)
+            let group = perchGroup(event: event, command: line)
             if let index = hooks.firstIndex(where: { $0.key == event }) {
                 guard case var .array(groups) = hooks[index].value else { continue } // foreign shape: leave alone
                 if let existing = groups.firstIndex(where: containsPerch) {
-                    groups[existing] = updatingCommand(of: groups[existing], to: command)
+                    groups[existing] = updating(
+                        group: groups[existing], command: line,
+                        timeout: awaitingEvents.contains(event) ? permissionTimeout : nil
+                    )
                 } else {
                     groups.append(group)
                 }
@@ -130,6 +151,22 @@ nonisolated enum HookInstaller {
                     if let command = entry["command"]?.stringValue, command.contains(marker) {
                         result[member.key, default: []].append(command)
                     }
+                }
+            }
+        }
+        return result
+    }
+
+    /// Timeouts (seconds) of Perch's entries, by event; nil for an entry without one.
+    static func installedTimeouts(in data: Data?) -> [String: [Int?]] {
+        guard let data, let root = try? parseRoot(data), case let .object(hooks)? = root["hooks"] else { return [:] }
+        var result: [String: [Int?]] = [:]
+        for member in hooks {
+            for group in member.value.arrayValue ?? [] {
+                for entry in group["hooks"]?.arrayValue ?? [] where isPerchEntry(entry) {
+                    var seconds: Int?
+                    if case let .number(literal)? = entry["timeout"] { seconds = Int(literal) }
+                    result[member.key, default: []].append(seconds)
                 }
             }
         }
@@ -199,7 +236,7 @@ nonisolated enum HookInstaller {
         members.append(JSONMember(key: "hooks", value: .array([.object([
             JSONMember(key: "type", value: .string("command")),
             JSONMember(key: "command", value: .string(command)),
-            JSONMember(key: "timeout", value: .number(String(timeout))),
+            JSONMember(key: "timeout", value: .number(String(timeout(for: event)))),
         ])])))
         return .object(members)
     }
@@ -214,7 +251,8 @@ nonisolated enum HookInstaller {
         return value["hooks"]?.arrayValue?.contains(where: isPerchEntry) ?? false
     }
 
-    private static func updatingCommand(of group: JSONValue, to command: String) -> JSONValue {
+    /// Sets the command of the group's Perch entries and, when given, their timeout (added when missing).
+    private static func updating(group: JSONValue, command: String, timeout: Int?) -> JSONValue {
         guard case var .object(members) = group,
               let index = members.firstIndex(where: { $0.key == "hooks" }),
               case let .array(entries) = members[index].value
@@ -224,6 +262,14 @@ nonisolated enum HookInstaller {
                   let commandIndex = fields.firstIndex(where: { $0.key == "command" })
             else { return entry }
             fields[commandIndex].value = .string(command)
+            if let timeout {
+                let value = JSONValue.number(String(timeout))
+                if let timeoutIndex = fields.firstIndex(where: { $0.key == "timeout" }) {
+                    fields[timeoutIndex].value = value
+                } else {
+                    fields.append(JSONMember(key: "timeout", value: value))
+                }
+            }
             return .object(fields)
         })
         return .object(members)

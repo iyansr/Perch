@@ -93,9 +93,99 @@ struct AgentEventTests {
 }
 
 struct AgentSessionsTests {
-    private func event(_ type: String, session: String = "a", message: String? = nil) -> AgentEvent {
+    private func event(_ type: String, session: String = "a", message: String? = nil, request: String? = nil) -> AgentEvent {
         AgentEvent(v: 1, source: .claude, type: type, session: session, cwd: "/Users/me/api-server",
-                   message: message, term: terminal, ts: 0)
+                   message: message, term: terminal, ts: 0, request: request)
+    }
+
+    /// Replies the sessions sent to the bridge.
+    private final class Answers {
+        var all: [String] = []
+        func record(_ request: String, _ allow: Bool) { all.append("\(request):\(allow ? "allow" : "deny")") }
+    }
+
+    private func awaitingSetup() -> (ActivityCenter, AgentSessions, Answers) {
+        let center = ActivityCenter()
+        let answers = Answers()
+        let sessions = AgentSessions(activities: center, reply: answers.record)
+        sessions.handle(event("user_prompt_submit", message: "run it"))
+        sessions.handle(event("permission_request", message: "Allow Bash: npm test?", request: "r1"))
+        return (center, sessions, answers)
+    }
+
+    @Test func awaitedPermissionRequestShowsTheDecisionButtons() {
+        let (center, _, answers) = awaitingSetup()
+        #expect(center.items.count == 1)
+        #expect(center.items[0].status == .needsAttention)
+        #expect(center.items[0].decision == PendingDecision(id: "r1"))
+        #expect(answers.all.isEmpty)
+    }
+
+    @Test func permissionRequestWithoutARequestIdHasNoButtons() {
+        let center = ActivityCenter()
+        let sessions = AgentSessions(activities: center)
+        sessions.handle(event("permission_request", message: "Allow Bash: ls?"))
+        #expect(center.items[0].status == .needsAttention)
+        #expect(center.items[0].decision == nil)
+    }
+
+    @Test func allowAnswersTheHelperClearsTheButtonsAndResumesTheRow() {
+        let (center, sessions, answers) = awaitingSetup()
+        sessions.answer(request: "r1", allow: true)
+        #expect(answers.all == ["r1:allow"])
+        #expect(center.items[0].decision == nil)
+        #expect(center.items[0].status == .running)
+    }
+
+    @Test func denyAnswersTheHelper() {
+        let (center, sessions, answers) = awaitingSetup()
+        sessions.answer(request: "r1", allow: false)
+        #expect(answers.all == ["r1:deny"])
+        #expect(center.items[0].decision == nil)
+        #expect(center.items[0].status == .running)
+    }
+
+    @Test func aSecondAnswerOrAnUnknownRequestDoesNothing() {
+        let (_, sessions, answers) = awaitingSetup()
+        sessions.answer(request: "other", allow: true)
+        sessions.answer(request: "r1", allow: true)
+        sessions.answer(request: "r1", allow: false)
+        #expect(answers.all == ["r1:allow"])
+    }
+
+    @Test func helperGoneClearsTheButtonsAndKeepsTheStatus() {
+        let (center, sessions, answers) = awaitingSetup()
+        sessions.requestEnded("r1")
+        #expect(center.items[0].decision == nil)
+        #expect(center.items[0].status == .needsAttention)
+        sessions.answer(request: "r1", allow: true) // the card is gone, but a late answer must not reach anyone
+        #expect(answers.all.isEmpty)
+    }
+
+    @Test func anyLaterEventOfTheSessionClearsTheButtons() {
+        let (center, sessions, answers) = awaitingSetup()
+        // The user answered in the terminal: the agent runs the tool and reports it.
+        sessions.handle(event("post_tool_use", message: "Bash: npm test"))
+        #expect(center.items[0].decision == nil)
+        #expect(center.items[0].status == .running)
+        sessions.answer(request: "r1", allow: true)
+        #expect(answers.all.isEmpty)
+    }
+
+    @Test func aNewRequestReplacesTheOldButtons() {
+        let (center, sessions, answers) = awaitingSetup()
+        sessions.handle(event("permission_request", message: "Allow Write?", request: "r2"))
+        #expect(center.items[0].decision == PendingDecision(id: "r2"))
+        sessions.answer(request: "r1", allow: true)
+        #expect(answers.all.isEmpty)
+        sessions.answer(request: "r2", allow: true)
+        #expect(answers.all == ["r2:allow"])
+    }
+
+    @Test func otherSessionsKeepTheirButtons() {
+        let (center, sessions, _) = awaitingSetup()
+        sessions.handle(event("user_prompt_submit", session: "b"))
+        #expect(center.items.first { $0.decision != nil }?.decision == PendingDecision(id: "r1"))
     }
 
     @Test func oneSessionKeepsOneRowThroughItsLifecycle() {
@@ -178,21 +268,7 @@ struct PerchCLITests {
     }
 
     private func run(_ arguments: [String], stdin: Data, socket: URL) throws -> (status: Int32, stdout: Data, elapsed: TimeInterval) {
-        let process = Process()
-        process.executableURL = helper
-        process.arguments = arguments
-        process.environment = ProcessInfo.processInfo.environment.merging(["PERCH_SOCKET": socket.path]) { $1 }
-        let input = Pipe()
-        let output = Pipe()
-        process.standardInput = input
-        process.standardOutput = output
-        let start = Date()
-        try process.run()
-        input.fileHandleForWriting.write(stdin)
-        try input.fileHandleForWriting.close()
-        let stdout = output.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        return (process.terminationStatus, stdout, Date().timeIntervalSince(start))
+        try runPerch(arguments, stdin: stdin, socket: socket, environment: [:])
     }
 
     @Test func hookFailsOpenWhenPerchIsNotListening() throws {
@@ -243,6 +319,117 @@ struct PerchCLITests {
         #expect(events.first?.message == "Allow Bash: rtk ls?")
     }
 
+    /// Starts `perch event --await` on the claude PermissionRequest fixture, off the main actor.
+    private func startAwaiting(socket: URL, timeout: String = "10") throws -> Task<(status: Int32, stdout: Data, elapsed: TimeInterval), Error> {
+        let payload = try fixture("claude-PermissionRequest")
+        return Task.detached {
+            try runPerch(["event", "--source", "claude", "--await"], stdin: payload, socket: socket,
+                         environment: [AgentReply.awaitEnvironmentKey: timeout])
+        }
+    }
+
+    @Test func awaitingHookPrintsTheAllowDecisionByteForByte() async throws {
+        let socket = socketPath()
+        let received = Received()
+        let bridge = AgentBridge(socketURL: socket) { received.append($0) }
+        try bridge.start()
+        defer { bridge.stop() }
+
+        let cli = try startAwaiting(socket: socket)
+        let event = try #require(try await received.wait(count: 1).first)
+        #expect(event.type == "permission_request")
+        let request = try #require(event.request)
+        bridge.reply(request: request, allow: true)
+
+        let result = try await cli.value
+        #expect(result.status == 0)
+        #expect(result.stdout == (try fixture("claude-PermissionRequest-reply")))
+        #expect(result.elapsed < 5)
+    }
+
+    @Test func awaitingHookPrintsTheDenyDecisionWithoutInterrupt() async throws {
+        let socket = socketPath()
+        let received = Received()
+        let bridge = AgentBridge(socketURL: socket) { received.append($0) }
+        try bridge.start()
+        defer { bridge.stop() }
+
+        let cli = try startAwaiting(socket: socket)
+        let event = try #require(try await received.wait(count: 1).first)
+        bridge.reply(request: try #require(event.request), allow: false)
+
+        let result = try await cli.value
+        #expect(result.status == 0)
+        let expected = #"{"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {"behavior": "deny", "message": "Denied from Perch"}}}"# + "\n"
+        #expect(result.stdout == Data(expected.utf8))
+        #expect(!String(decoding: result.stdout, as: UTF8.self).contains("interrupt"))
+    }
+
+    @Test func awaitingHookPrintsNothingWhenNobodyAnswersInTime() async throws {
+        let socket = socketPath()
+        let received = Received()
+        let ended = Collector<String>()
+        let bridge = AgentBridge(socketURL: socket, onRequestEnded: { ended.append($0) }) { received.append($0) }
+        try bridge.start()
+        defer { bridge.stop() }
+
+        let result = try await startAwaiting(socket: socket, timeout: "0.4").value
+        #expect(result.status == 0)
+        #expect(result.stdout.isEmpty)
+        #expect(result.elapsed >= 0.35)
+        #expect(result.elapsed < 5)
+
+        // The helper hung up: the bridge reports the request so the app can drop its buttons.
+        let request = try #require(try await received.wait(count: 1).first?.request)
+        #expect(try await ended.wait(count: 1) == [request])
+    }
+
+    @Test func awaitingHookPrintsNothingWithoutAnApp() throws {
+        let socket = socketPath()
+        let payload = try fixture("claude-PermissionRequest")
+        let missing = try runPerch(["event", "--source", "claude", "--await"], stdin: payload, socket: socket,
+                                   environment: [AgentReply.awaitEnvironmentKey: "10"])
+        #expect(missing.status == 0)
+        #expect(missing.stdout.isEmpty)
+        #expect(missing.elapsed < 1)
+
+        makeStaleSocket(at: socket)
+        defer { try? FileManager.default.removeItem(at: socket) }
+        let refused = try runPerch(["event", "--source", "claude", "--await"], stdin: payload, socket: socket,
+                                   environment: [AgentReply.awaitEnvironmentKey: "10"])
+        #expect(refused.status == 0)
+        #expect(refused.stdout.isEmpty)
+        #expect(refused.elapsed < 1)
+    }
+
+    @Test func awaitingHookPrintsNothingWhenPerchQuitsMidRequest() async throws {
+        let socket = socketPath()
+        let received = Received()
+        let bridge = AgentBridge(socketURL: socket) { received.append($0) }
+        try bridge.start()
+
+        let cli = try startAwaiting(socket: socket)
+        _ = try await received.wait(count: 1)
+        bridge.stop()
+
+        let result = try await cli.value
+        #expect(result.status == 0)
+        #expect(result.stdout.isEmpty)
+        #expect(result.elapsed < 5) // EOF ends the wait; it does not sit out the 10 s timeout
+    }
+
+    @Test func hookWithoutAwaitSendsNoRequestAndDoesNotWait() async throws {
+        let socket = socketPath()
+        let received = Received()
+        let bridge = AgentBridge(socketURL: socket) { received.append($0) }
+        try bridge.start()
+        defer { bridge.stop() }
+        let result = try run(["event", "--source", "claude"], stdin: try fixture("claude-PermissionRequest"), socket: socket)
+        #expect(result.stdout.isEmpty)
+        #expect(result.elapsed < 1)
+        #expect(try await received.wait(count: 1).first?.request == nil)
+    }
+
     @Test func watchReportsStartAndExitAndForwardsTheCode() async throws {
         let socket = socketPath()
         let received = Received()
@@ -261,24 +448,169 @@ struct PerchCLITests {
     }
 }
 
-/// Events the bridge delivered on its own queue.
-private final class Received: @unchecked Sendable {
-    private let lock = NSLock()
-    private var events: [AgentEvent] = []
-
-    func append(_ event: AgentEvent) {
-        lock.withLock { events.append(event) }
+/// Talks to the bridge the way `perch event --await` does, without the helper.
+struct AgentBridgeRequestTests {
+    private func socketPath() -> URL {
+        URL(filePath: NSTemporaryDirectory()).appending(path: "p-\(UUID().uuidString.prefix(8)).sock")
     }
 
-    func wait(count: Int, timeout: TimeInterval = 2) async throws -> [AgentEvent] {
+    private func connect(to url: URL) throws -> Int32 {
+        let descriptor = socket(AF_UNIX, SOCK_STREAM, 0)
+        var address = sockaddr_un()
+        address.sun_family = sa_family_t(AF_UNIX)
+        withUnsafeMutableBytes(of: &address.sun_path) { buffer in
+            buffer.copyBytes(from: url.path.utf8)
+            buffer[url.path.utf8.count] = 0
+        }
+        let result = withUnsafePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                Darwin.connect(descriptor, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+            }
+        }
+        try #require(result == 0)
+        var timeout = timeval(tv_sec: 2, tv_usec: 0)
+        setsockopt(descriptor, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+        return descriptor
+    }
+
+    private func send(_ event: AgentEvent, on descriptor: Int32) throws {
+        let line = try #require(event.encodedLine())
+        _ = line.withUnsafeBytes { Darwin.write(descriptor, $0.baseAddress, $0.count) }
+    }
+
+    /// Everything the bridge wrote until it closed the connection (or 2 s passed).
+    private func readAll(from descriptor: Int32) -> Data {
+        var data = Data()
+        var chunk = [UInt8](repeating: 0, count: 1024)
+        while true {
+            let count = Darwin.read(descriptor, &chunk, chunk.count)
+            if count <= 0 { return data }
+            data.append(contentsOf: chunk[..<count])
+        }
+    }
+
+    private func permissionRequest(_ request: String?) -> AgentEvent {
+        AgentEvent(v: 1, source: .claude, type: "permission_request", session: "s", message: "Allow Bash: ls?",
+                   ts: 0, request: request)
+    }
+
+    @Test func replyReachesTheClientThatAskedAndClosesItsConnection() async throws {
+        let socket = socketPath()
+        let received = Collector<AgentEvent>()
+        let ended = Collector<String>()
+        let bridge = AgentBridge(socketURL: socket, onRequestEnded: { ended.append($0) }) { received.append($0) }
+        try bridge.start()
+        defer { bridge.stop() }
+
+        let first = try connect(to: socket)
+        let second = try connect(to: socket)
+        defer { close(first); close(second) }
+        try send(permissionRequest("one"), on: first)
+        try send(permissionRequest("two"), on: second)
+        #expect(try await received.wait(count: 2).count == 2)
+
+        bridge.reply(request: "two", allow: false)
+        let line = readAll(from: second)
+        #expect(try JSONDecoder().decode(AgentReply.self, from: line) == AgentReply(request: "two", allow: false))
+        #expect(line.last == 0x0A)
+
+        bridge.reply(request: "one", allow: true)
+        #expect(try JSONDecoder().decode(AgentReply.self, from: readAll(from: first)) == AgentReply(request: "one", allow: true))
+
+        // Answered requests are not "ended".
+        #expect(try await ended.wait(count: 1, timeout: 0.2).isEmpty)
+    }
+
+    @Test func aClientThatHangsUpBeforeTheAnswerEndsItsRequest() async throws {
+        let socket = socketPath()
+        let received = Collector<AgentEvent>()
+        let ended = Collector<String>()
+        let bridge = AgentBridge(socketURL: socket, onRequestEnded: { ended.append($0) }) { received.append($0) }
+        try bridge.start()
+        defer { bridge.stop() }
+
+        let client = try connect(to: socket)
+        try send(permissionRequest("gone"), on: client)
+        _ = try await received.wait(count: 1)
+        close(client)
+        #expect(try await ended.wait(count: 1) == ["gone"])
+
+        bridge.reply(request: "gone", allow: true) // nobody is listening: no crash, no second report
+        #expect(try await ended.wait(count: 2, timeout: 0.2) == ["gone"])
+    }
+
+    @Test func eventsWithoutARequestKeepNoConnectionOpenForReplies() async throws {
+        let socket = socketPath()
+        let received = Collector<AgentEvent>()
+        let ended = Collector<String>()
+        let bridge = AgentBridge(socketURL: socket, onRequestEnded: { ended.append($0) }) { received.append($0) }
+        try bridge.start()
+        defer { bridge.stop() }
+
+        let client = try connect(to: socket)
+        defer { close(client) }
+        try send(permissionRequest(nil), on: client)
+        _ = try await received.wait(count: 1)
+        bridge.reply(request: "anything", allow: true)
+        var timeout = timeval(tv_sec: 0, tv_usec: 200_000)
+        setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+        #expect(readAll(from: client).isEmpty)
+        #expect(try await ended.wait(count: 1, timeout: 0.2).isEmpty)
+    }
+
+    @Test func requestsAreTheOnlyThingTheWireAddsToAnEvent() throws {
+        let plain = try #require(permissionRequest(nil).encodedLine())
+        #expect(!String(decoding: plain, as: UTF8.self).contains("\"request\":"))
+        let asked = try #require(permissionRequest("r").encodedLine())
+        #expect(try JSONDecoder().decode(AgentEvent.self, from: asked).request == "r")
+        #expect(AgentReply.awaitSeconds == 110)
+        #expect(HookInstaller.permissionTimeout > Int(AgentReply.awaitSeconds))
+    }
+}
+
+/// Values the bridge delivered on its own queue.
+nonisolated private final class Collector<Element: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var elements: [Element] = []
+
+    func append(_ element: Element) {
+        lock.withLock { elements.append(element) }
+    }
+
+    func wait(count: Int, timeout: TimeInterval = 2) async throws -> [Element] {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
-            let snapshot = lock.withLock { events }
+            let snapshot = lock.withLock { elements }
             if snapshot.count >= count { return snapshot }
             try await Task.sleep(for: .milliseconds(20))
         }
-        return lock.withLock { events }
+        return lock.withLock { elements }
     }
+}
+
+private typealias Received = Collector<AgentEvent>
+
+/// Runs the embedded `perch` helper off the main actor, so a test can drive the bridge while it waits.
+nonisolated private func runPerch(
+    _ arguments: [String], stdin: Data, socket: URL, environment: [String: String]
+) throws -> (status: Int32, stdout: Data, elapsed: TimeInterval) {
+    let process = Process()
+    process.executableURL = Bundle.main.bundleURL.appending(path: "Contents/Helpers/perch")
+    process.arguments = arguments
+    process.environment = ProcessInfo.processInfo.environment
+        .merging(["PERCH_SOCKET": socket.path]) { $1 }
+        .merging(environment) { $1 }
+    let input = Pipe()
+    let output = Pipe()
+    process.standardInput = input
+    process.standardOutput = output
+    let start = Date()
+    try process.run()
+    input.fileHandleForWriting.write(stdin)
+    try input.fileHandleForWriting.close()
+    let stdout = output.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
+    return (process.terminationStatus, stdout, Date().timeIntervalSince(start))
 }
 
 private func makeStaleSocket(at url: URL) {

@@ -79,6 +79,8 @@ private struct AgentRow: View {
                     .disabled(!installed)
             case .needsReconnect:
                 Button("Reconnect…") { connections.prepareConnect(agent) }
+            case .needsUpdate:
+                Button("Update Perch's hooks…") { connections.prepareConnect(agent) }
             case .awaitingApproval, .connected:
                 Button("Disconnect…") { connections.prepareDisconnect(agent) }
             }
@@ -91,6 +93,8 @@ private struct AgentRow: View {
             Text(installed ? "Not connected" : "Not found on this Mac").foregroundStyle(.secondary)
         case .needsReconnect:
             Text("Hooks point at another copy of Perch").foregroundStyle(.orange)
+        case .needsUpdate:
+            Text("Update the hooks to answer permission requests from Perch").foregroundStyle(.orange)
         case .awaitingApproval:
             Text("Open Codex and approve Perch's hooks when it asks").foregroundStyle(.orange)
         case .connected:
@@ -106,7 +110,7 @@ private struct HookDiffView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("\(change.isRemoval ? "Remove Perch from" : "Add Perch to") \(change.path)")
+            Text("\(change.isRemoval ? "Remove Perch from" : change.isUpdate ? "Update Perch's hooks in" : "Add Perch to") \(change.path)")
                 .font(.system(size: 13, weight: .semibold))
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
@@ -132,7 +136,7 @@ private struct HookDiffView: View {
             HStack {
                 Spacer()
                 Button("Cancel") { connections.cancelPending() }
-                Button(change.isRemoval ? "Disconnect" : "Connect") { connections.confirmPending() }
+                Button(change.isRemoval ? "Disconnect" : change.isUpdate ? "Update" : "Connect") { connections.confirmPending() }
                     .buttonStyle(.borderedProminent)
             }
         }

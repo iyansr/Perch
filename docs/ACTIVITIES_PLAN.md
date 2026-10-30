@@ -6,16 +6,21 @@ Goal: every activity a competing notch app shows should be available in Perch's 
 
 ## Status
 
-§1 and Release A are implemented (Oct 30, 2026). B, C and the decision card (§3.7) are not started. Where the build differs from the text below:
+§1, Release A and Release B are implemented (Oct 30, 2026). C is not started. Where the build differs from the text below:
 
-- **Kinds.** `Activity.Kind` gained only the Release A cases (`nowPlaying`, `hud`, `deviceBattery`). Each later release adds its own cases with its source, so no case exists without a producer. `HUDKind` has no `capsLock` yet (B3).
+- **Kinds.** `Activity.Kind` has the A and B cases (`nowPlaying`, `hud`, `deviceBattery`, `meeting`, `privacy`, `download`). Each later release adds its own cases with its source, so no case exists without a producer. `download` is keyed by the partial file's path rather than a URL.
 - **Progress.** `.waveform` carries `playing: Bool`, so a paused track shows resting bars.
 - **Sources.** `ActivitySource` exposes `static info` (Settings title, symbol, permission kind); `permission` is derived from it. `SourcePermission` carries the kind in `.granted` / `.denied` too, so the Settings row can link the right pane.
 - **A1.** The adapter is vendored in `Vendor/mediaremote-adapter` and built by `Scripts/build-mediaremote-adapter.sh` (clang, no CMake) into `Contents/Resources/MediaRemoteAdapter/`. The stream runs with `--allow-missing-title`; untitled media (QuickTime, some web video) is named after its app. The AppleScript fallback starts when the adapter is missing or its stream exits. The music card's artwork is 56 pt, not 72 pt, so artwork, scrubber and transport fit in 150 pt.
-- **A2.** Volume comes from a CoreAudio listener on the default output device instead of the key tap: it needs no permission and catches menu-bar and app changes too. The tap (Accessibility) handles brightness and keyboard backlight only, including the 144/145 key codes Apple silicon keyboards send. "Replace system HUD" runs `launchctl kickstart -k` then `kill SIGSTOP` on `OSDUIHelper`, re-applies on wake, and resumes it on quit.
+- **A2.** Volume comes from a CoreAudio listener on the default output device instead of the key tap: it needs no permission and catches menu-bar and app changes too. Brightness, keyboard backlight and Caps Lock use NSEvent global + local monitors (Accessibility), including the 144/145 key codes Apple silicon keyboards send. A listen-only `CGEventTap` does not work here: keyboard taps are gated on Input Monitoring, and the tap is created without it but never receives a key. "Replace system HUD" runs `launchctl kickstart -k` then `kill SIGSTOP` on `OSDUIHelper`, re-applies on wake, and resumes it on quit.
 - **A3.** AirPods charge comes from IOBluetoothDevice's `batteryPercent*` properties. Magic accessories come from the `AppleDeviceManagementHIDEventService` entry (`BatteryPercent`), matched by address.
 - **A4.** The Timer module's presets are 5 min, 25 min and Pomodoro (the 50 min chip made room). `t pomo` / `t pomodoro` starts one from search.
-- **Not verified on hardware yet:** brightness/backlight keys, Bluetooth connect cards, AppleScript fallback, and the manual matrix in §4.
+- **B1.** Ambient detail is the start time; T−10 min it turns persistent + `needsAttention` with a countdown, a Join button and "Open in Calendar". It stays joinable until 5 min after the start, and events more than 12 h out stay off the pill.
+- **B2.** On by default (no permission). The chip shows the sensor only, as planned; the row has no dismiss button because the sensor, not the user, ends it.
+- **B3.** Caps Lock shares the HUD source's key tap (`flagsChanged`, key code 57) and its Settings toggle.
+- **B4.** Off by default: macOS asks once for Downloads-folder access. A partial file older than 2 min when first seen is ignored as a leftover, and one with no change for 5 min is dropped.
+- **B5.** Wire protocol: `perch event --await` adds `"request": <uuid>` and waits; the app replies `{"allow":Bool,"request":id,"v":1}` and the CLI prints the hook JSON. The hook command is `… --await || true` with `timeout: 120`; old installs show "Update Perch's hooks…" (`AgentConnections.Status.needsUpdate`). Codex is enabled too: its bundled hook schema has the same `PermissionRequest` input and `decision.behavior` output, but no live `codex-PermissionRequest.json` was captured, and updating Codex's hook makes Codex ask to trust it again. The decision card (§3.7) stays open until answered or withdrawn; Esc/↵ shortcuts are not wired, because the hover card never takes keyboard focus.
+- **Not verified on hardware yet:** brightness/backlight/Caps Lock keys, Bluetooth connect cards, AppleScript fallback, calendar access and the Join flow, camera/mic chips while a sensor is live, a real browser download, the decision card against a live Claude/Codex prompt, and the manual matrix in §4.
 
 ## 0. Competitor survey
 

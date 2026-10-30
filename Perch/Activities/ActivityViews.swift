@@ -84,10 +84,16 @@ struct IdleActivityContent: View {
 
     @ViewBuilder
     private func trailing(_ activity: Activity, showsClock: Bool = false) -> some View {
-        switch activity.progress {
-        case let .waveform(playing):
+        switch (activity.kind, activity.progress) {
+        case (.hud(.capsLock), _):
+            caption(activity.detail) // "On" / "Off"
+        case (.meeting, _) where activity.presentation == .ambient:
+            caption(activity.detail) // start time
+        case let (.privacy(sensor), _):
+            PrivacyDot(sensor: sensor)
+        case let (_, .waveform(playing)):
             Waveform(playing: playing, tint: activity.media?.tint.map(Color.init(nsColor:)) ?? .white, height: 12)
-        case let .level(level):
+        case let (_, .level(level)):
             // The notch ear is 44 pt; the island has room for a longer bar.
             LevelBar(level: level)
                 .frame(width: model.geometry.style == .island ? 64 : 26, height: 4)
@@ -95,15 +101,37 @@ struct IdleActivityContent: View {
             ActivityTrailing(activity: activity, showsClock: showsClock)
         }
     }
+
+    private func caption(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 11, weight: .semibold).monospacedDigit())
+            .foregroundStyle(.white.opacity(0.85))
+            .lineLimit(1)
+    }
 }
 
-/// Hover card: the music card when music leads, otherwise up to three activities with their actions.
+/// macOS's own colours: green for the camera, orange for the microphone.
+struct PrivacyDot: View {
+    let sensor: Activity.PrivacySensor
+
+    var body: some View {
+        Circle()
+            .fill(sensor == .camera ? Color.green : Color.orange)
+            .frame(width: 7, height: 7)
+    }
+}
+
+/// Hover card: the decision card while a question waits, the music card when music leads,
+/// otherwise up to three activities with their actions.
 struct GlanceCard: View {
     let model: NotchModel
 
     var body: some View {
         let items = model.activities.glanceItems
-        if let media = items.first?.media {
+        if let activity = items.first, let decision = activity.decision {
+            DecisionCard(activity: activity, decision: decision)
+                .frame(maxHeight: .infinity, alignment: .bottom)
+        } else if let media = items.first?.media {
             MusicCard(media: media)
                 .frame(maxHeight: .infinity, alignment: .bottom)
         } else {
@@ -117,6 +145,66 @@ struct GlanceCard: View {
             .padding(.vertical, 8)
             .frame(maxHeight: .infinity, alignment: .bottom)
         }
+    }
+}
+
+/// Shared layout for a two-button question (agent permission request): glyph, two-line title,
+/// full-width Deny / Allow. Stays open on mouse-out until answered (see `NotchController.updateHover`).
+struct DecisionCard: View {
+    static let height: CGFloat = 116
+
+    let activity: Activity
+    let decision: PendingDecision
+
+    var body: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 12) {
+                ActivityGlyph(activity: activity, size: 16)
+                    .frame(width: 34, height: 34)
+                    .background(Circle().fill(activity.status.tint.opacity(0.18)))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(activity.title)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                    Text(activity.detail)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.white.opacity(0.7))
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 0)
+                if let terminal = activity.terminal {
+                    CircleButton(symbol: "terminal") { TerminalFocuser.focus(terminal) }
+                        .help("Focus terminal")
+                }
+            }
+            HStack(spacing: 8) {
+                Button(decision.declineTitle) { DecisionRouter.shared.answer(decision, accepted: false) }
+                    .buttonStyle(DecisionButtonStyle(prominent: false))
+                Button(decision.acceptTitle) { DecisionRouter.shared.answer(decision, accepted: true) }
+                    .buttonStyle(DecisionButtonStyle(prominent: true))
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 12)
+        .frame(height: Self.height)
+    }
+}
+
+private struct DecisionButtonStyle: ButtonStyle {
+    let prominent: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(prominent ? .black : .white)
+            .frame(maxWidth: .infinity)
+            .frame(height: 30)
+            .background(Capsule().fill(prominent ? Color.white : Color.white.opacity(0.14)))
+            .opacity(configuration.isPressed ? 0.7 : 1)
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            .contentShape(Capsule())
     }
 }
 
@@ -170,10 +258,14 @@ struct GlanceRow: View {
 
     @ViewBuilder
     private var trailing: some View {
-        switch activity.progress {
-        case let .waveform(playing):
+        switch (activity.kind, activity.progress) {
+        case let (.privacy(sensor), _):
+            PrivacyDot(sensor: sensor)
+        case (.meeting, _) where activity.presentation == .ambient:
+            EmptyView() // the subtitle already says when
+        case let (_, .waveform(playing)):
             Waveform(playing: playing, height: 14)
-        case let .level(level):
+        case let (_, .level(level)):
             LevelBar(level: level).frame(width: 40, height: 4)
         default:
             ActivityTrailing(activity: activity, showsClock: true)
@@ -184,7 +276,7 @@ struct GlanceRow: View {
     private var subtitle: String {
         switch activity.kind {
         case .timer, .conversion, .agent: "\(activity.detail) · \(statusText)"
-        case .nowPlaying, .hud, .deviceBattery: activity.detail
+        case .nowPlaying, .hud, .deviceBattery, .meeting, .privacy, .download: activity.detail
         }
     }
 
@@ -196,17 +288,30 @@ struct GlanceRow: View {
     @ViewBuilder
     private var actions: some View {
         HStack(spacing: 6) {
+            if let decision = activity.decision {
+                CircleButton(symbol: "xmark") { DecisionRouter.shared.answer(decision, accepted: false) }
+                    .help(decision.declineTitle)
+                CircleButton(symbol: "checkmark") { DecisionRouter.shared.answer(decision, accepted: true) }
+                    .help(decision.acceptTitle)
+            }
             if activity.status == .running {
                 switch activity.progress {
-                case .countdown:
+                case .countdown where activity.timerRun != nil:
                     CircleButton(symbol: "pause.fill") { center.pause(activity.id) }
                 case .paused:
                     CircleButton(symbol: "play.fill") { center.resume(activity.id) }
-                case .indeterminate, .fraction, .level, .waveform:
+                default:
                     EmptyView()
                 }
             }
-            if case .conversion = activity.kind, !activity.outputs.isEmpty {
+            if let link = activity.link {
+                LinkButton(link: link)
+            }
+            if case let .meeting(eventID) = activity.kind {
+                CircleButton(symbol: "calendar") { MeetingSource.showInCalendar(eventID: eventID) }
+                    .help("Open in Calendar")
+            }
+            if !activity.outputs.isEmpty {
                 CircleButton(symbol: "folder") {
                     NSWorkspace.shared.activateFileViewerSelecting(activity.outputs)
                 }
@@ -222,11 +327,36 @@ struct GlanceRow: View {
                     .help(media.isPlaying ? "Pause" : "Play")
                 CircleButton(symbol: "forward.fill") { source.nextTrack() }
                     .help("Next track")
-            } else {
-                // Now playing ends with the player, not on request.
+            } else if activity.decision == nil, isDismissable {
                 CircleButton(symbol: "xmark") { center.dismiss(activity.id) }
             }
         }
+    }
+
+    /// Now playing and sensor chips end with the player or the sensor, not on request.
+    private var isDismissable: Bool {
+        switch activity.kind {
+        case .nowPlaying, .privacy: false
+        default: true
+        }
+    }
+}
+
+/// "Join" capsule: the activity's primary link.
+private struct LinkButton: View {
+    let link: ActivityLink
+
+    var body: some View {
+        Button { NSWorkspace.shared.open(link.url) } label: {
+            Text(link.title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.black)
+                .padding(.horizontal, 12)
+                .frame(height: 26)
+                .background(Capsule().fill(.white))
+        }
+        .buttonStyle(.plain)
+        .help(link.url.absoluteString)
     }
 }
 
