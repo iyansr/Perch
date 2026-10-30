@@ -1,5 +1,6 @@
 import AppKit
 import CoreLocation
+import MapKit
 import Observation
 import os
 import SwiftUI
@@ -7,8 +8,8 @@ import SwiftUI
 /// Current temperature and sky condition, ambient beside the notch when nothing else is showing.
 ///
 /// Where: the city typed in Settings (`AppSettings.weatherCity`), geocoded through Open-Meteo's own
-/// geocoding API (same provider and no key, no second permission or rate limit, and `CLGeocoder` is
-/// being replaced by MapKit), or the Mac's location when that setting is empty. Conditions come from
+/// geocoding API (same provider and no key, no second permission, and Apple's geocoder is rate-limited),
+/// or the Mac's location when that setting is empty. Conditions come from
 /// Open-Meteo every 30 minutes and after wake; failures back off (1, 2, 4 … 30 min).
 final class WeatherSource: ActivitySource {
     static let id = "weather"
@@ -193,8 +194,8 @@ final class WeatherSource: ActivitySource {
     /// Reverse geocoding is rate-limited by Apple; a fix within 5 km of the last named one keeps its name.
     private func placeName(for location: CLLocation) async -> String {
         if let locationName, locationName.location.distance(from: location) < 5_000 { return locationName.name }
-        let placemarks = try? await CLGeocoder().reverseGeocodeLocation(location)
-        let name = placemarks?.first.flatMap { $0.locality ?? $0.administrativeArea ?? $0.name } ?? "Weather"
+        let items = try? await MKReverseGeocodingRequest(location: location)?.mapItems
+        let name = items?.first.flatMap { $0.addressRepresentations?.cityName ?? $0.name } ?? "Weather"
         locationName = (location, name)
         return name
     }
@@ -273,7 +274,7 @@ final class LocationProvider: NSObject, CLLocationManagerDelegate {
         for waiter in pending { waiter.resume(with: result) }
     }
 
-    nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+    nonisolated func locationManagerDidChangeAuthorization(_: CLLocationManager) {
         MainActor.assumeIsolated {
             guard !waiters.isEmpty, manager.authorizationStatus != .notDetermined else { return }
             begin()

@@ -28,7 +28,7 @@ final class MediaRemoteAdapter {
 
     /// Streams state changes to `onUpdate` on the main queue. `onFailure` fires once if the
     /// script exits on its own with an error, meaning MediaRemote is no longer reachable this way.
-    func start(onUpdate: @escaping (MediaSnapshot?) -> Void, onFailure: @escaping () -> Void) {
+    func start(onUpdate: @escaping @MainActor (MediaSnapshot?) -> Void, onFailure: @escaping @MainActor () -> Void) {
         guard process == nil else { return }
         stopping = false
         reapOrphanedStream()

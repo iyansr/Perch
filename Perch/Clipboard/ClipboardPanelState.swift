@@ -63,7 +63,7 @@ final class ClipboardPanelState {
     }
 
     /// Calls `refresh` whenever the store changes (new copy, pin, promote, delete), re-arming itself.
-    func observeStore(_ refresh: @escaping () -> Void) {
+    func observeStore(_ refresh: @escaping @MainActor () -> Void) {
         withObservationTracking {
             _ = ClipboardStore.shared.revision
         } onChange: { [weak self] in

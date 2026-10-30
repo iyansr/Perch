@@ -19,9 +19,8 @@ nonisolated struct RawNotificationRow: Equatable {
 
 /// Read-only view of usernoted's notification database.
 ///
-/// Where it lives: macOS 15 and later keep it in the per-user Darwin cache directory
-/// (`$(getconf DARWIN_USER_DIR)/com.apple.notificationcenter/db2/db`); older releases use
-/// `~/Library/Group Containers/group.com.apple.usernoted/db2/db`. Both need Full Disk Access.
+/// Where it lives: the per-user Darwin cache directory
+/// (`$(getconf DARWIN_USER_DIR)/com.apple.notificationcenter/db2/db`). Needs Full Disk Access.
 /// Tables used: `record(rec_id, app_id, data)` and `app(app_id, identifier)`.
 ///
 /// The file is opened `SQLITE_OPEN_READONLY`, not `immutable=1`: the database is in WAL mode and an
@@ -31,35 +30,12 @@ nonisolated final class NotificationDatabase {
     let url: URL
     private var handle: OpaquePointer?
 
-    static func candidateURLs(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> [URL] {
-        var urls: [URL] = []
+    /// The database path, or nil when the Darwin user directory cannot be read.
+    static func defaultURL() -> URL? {
         var buffer = [CChar](repeating: 0, count: Int(PATH_MAX))
-        if confstr(_CS_DARWIN_USER_DIR, &buffer, buffer.count) > 0 {
-            urls.append(URL(fileURLWithPath: String(cString: buffer)).appending(path: "com.apple.notificationcenter/db2/db"))
-        }
-        urls.append(home.appending(path: "Library/Group Containers/group.com.apple.usernoted/db2/db"))
-        return urls
-    }
-
-    /// Opens the best candidate: among those that open and match the schema, the one written most recently.
-    static func open(candidates: [URL]) throws -> NotificationDatabase {
-        var best: (database: NotificationDatabase, modified: Date)?
-        var mismatch: String?
-        var unavailable: [String] = []
-        for url in candidates {
-            do {
-                let database = try NotificationDatabase(url: url)
-                let modified = database.lastModified
-                if best == nil || modified > best!.modified { best = (database, modified) }
-            } catch NotificationDatabaseError.schemaMismatch(let reason) {
-                mismatch = reason
-            } catch NotificationDatabaseError.unavailable(let reason) {
-                unavailable.append(reason)
-            }
-        }
-        if let best { return best.database }
-        if let mismatch { throw NotificationDatabaseError.schemaMismatch(mismatch) }
-        throw NotificationDatabaseError.unavailable(unavailable.joined(separator: "; "))
+        guard confstr(_CS_DARWIN_USER_DIR, &buffer, buffer.count) > 0 else { return nil }
+        let path = String(decoding: buffer.prefix { $0 != 0 }.map(UInt8.init(bitPattern:)), as: UTF8.self)
+        return URL(fileURLWithPath: path).appending(path: "com.apple.notificationcenter/db2/db")
     }
 
     init(url: URL) throws {
@@ -84,12 +60,6 @@ nonisolated final class NotificationDatabase {
 
     deinit {
         sqlite3_close(handle)
-    }
-
-    var lastModified: Date {
-        [url.path, url.path + "-wal"]
-            .compactMap { try? FileManager.default.attributesOfItem(atPath: $0)[.modificationDate] as? Date }
-            .max() ?? .distantPast
     }
 
     /// Highest `rec_id`, or 0 for an empty table.
@@ -177,7 +147,7 @@ nonisolated final class NotificationFeed: @unchecked Sendable {
     private static let log = Logger(subsystem: Bundle.main.bundleIdentifier ?? "Perch", category: "NotificationFeed")
 
     private let queue = DispatchQueue(label: "perch.notification-feed", qos: .utility)
-    private let candidates: [URL]
+    private let url: URL?
     private let interval: DispatchTimeInterval
     private let retryEvery: Int
 
@@ -191,8 +161,8 @@ nonisolated final class NotificationFeed: @unchecked Sendable {
     private var isDisabled = false
     private var hasLoggedUnavailable = false
 
-    init(candidates: [URL] = NotificationDatabase.candidateURLs(), interval: DispatchTimeInterval = .seconds(2), retryEvery: Int = 15) {
-        self.candidates = candidates
+    init(url: URL? = NotificationDatabase.defaultURL(), interval: DispatchTimeInterval = .seconds(2), retryEvery: Int = 15) {
+        self.url = url
         self.interval = interval
         self.retryEvery = retryEvery
     }
@@ -248,7 +218,8 @@ nonisolated final class NotificationFeed: @unchecked Sendable {
                 return nil
             }
             do {
-                let opened = try NotificationDatabase.open(candidates: candidates)
+                guard let url else { throw NotificationDatabaseError.unavailable("Darwin user directory unknown") }
+                let opened = try NotificationDatabase(url: url)
                 database = opened
                 if cursor == nil { cursor = try opened.maxRowID() }
                 ticksUntilOpen = 0

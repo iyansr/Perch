@@ -99,7 +99,7 @@ final class ScreenManager {
         }
     }
 
-    deinit {
+    isolated deinit {
         for (center, observer) in observers { center.removeObserver(observer) }
         scanTimer?.invalidate()
     }
@@ -116,7 +116,7 @@ final class ScreenManager {
         needsFullScan = true
     }
 
-    private func observe(_ center: NotificationCenter, _ name: Notification.Name, _ handler: @escaping (ScreenManager) -> Void) {
+    private func observe(_ center: NotificationCenter, _ name: Notification.Name, _ handler: @escaping @MainActor (ScreenManager) -> Void) {
         let observer = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }

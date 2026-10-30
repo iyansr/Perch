@@ -1,4 +1,5 @@
 import AppKit
+import Synchronization
 
 /// Reads and drives Google Meet in a Chromium browser by running JavaScript in the meeting tab through
 /// AppleScript. Chrome must have View → Developer → Allow JavaScript from Apple Events turned on
@@ -33,7 +34,7 @@ final class MeetController {
         Self.browsers.contains { isRunning($0.bundleID) }
     }
 
-    func poll(_ completion: @escaping (Poll) -> Void) {
+    func poll(_ completion: @escaping @MainActor (Poll) -> Void) {
         guard !polling else { return }
         let browsers = Self.browsers.filter { isRunning($0.bundleID) && !denied.contains($0.bundleID) }
         guard !browsers.isEmpty else {
@@ -140,11 +141,12 @@ final class MeetController {
             return (-1, "", "\(error)")
         }
         // Drain stderr on a side thread so a full pipe cannot stall osascript.
-        var errData = Data()
+        let errData = Mutex(Data())
         let group = DispatchGroup()
         group.enter()
         DispatchQueue.global(qos: .utility).async {
-            errData = err.fileHandleForReading.readDataToEndOfFile()
+            let data = err.fileHandleForReading.readDataToEndOfFile()
+            errData.withLock { $0 = data }
             group.leave()
         }
         let outData = out.fileHandleForReading.readDataToEndOfFile()
@@ -153,7 +155,7 @@ final class MeetController {
         return (
             process.terminationStatus,
             String(data: outData, encoding: .utf8) ?? "",
-            String(data: errData, encoding: .utf8) ?? ""
+            String(data: errData.withLock { $0 }, encoding: .utf8) ?? ""
         )
     }
 }

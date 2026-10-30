@@ -22,9 +22,10 @@ Commit `60fc978` (scaffold) builds clean (`xcodebuild -scheme Perch`, Debug). Mo
 | F5 Ask AI | Dropped from v0.1 (decision 11); the AI chip is removed too | — |
 | J1 Onboarding, hotkey recorder, settings | Done; step 3 (agents) added; Settings is its own window (decision 13) | `Onboarding/*`, `Settings/*`, `Hotkey/*`, `App/AppSettings.swift` |
 | Unit test target | Done (`PerchTests`, 99 tests) | `PerchTests/` |
-| Signing, notarization, Sparkle, DMG | Not started | — |
+| Signing | Release signs with the self-signed `Perch Self-Signed` identity (no paid Apple account); see [signing.md](signing.md) | `Scripts/create-signing-identity.sh` |
+| Sparkle, DMG | Not started | — |
 
-Project facts: macOS 14 target, no sandbox, hardened runtime on, `LSUIElement = YES`, default actor isolation `MainActor`, file-system-synchronized groups (new files under `Perch/` join the target automatically). Targets: `Perch` (app), `PerchCLI` (product `perch`, module `PerchCLI` so it does not clash with `Perch` on a case-insensitive disk), `PerchTests`. `Shared/` is compiled into both the app and the CLI. SPM: GRDB, libwebp. `Perch.entitlements` carries `com.apple.security.automation.apple-events`.
+Project facts: macOS 26 target (macOS 27 preferred), Swift 6 language mode with complete strict concurrency, no sandbox, hardened runtime on, `LSUIElement = YES`, default actor isolation `MainActor`, file-system-synchronized groups (new files under `Perch/` join the target automatically). Targets: `Perch` (app), `PerchCLI` (product `perch`, module `PerchCLI` so it does not clash with `Perch` on a case-insensitive disk), `PerchTests`. `Shared/` is compiled into both the app and the CLI. SPM: GRDB, libwebp. `Perch/Perch.entitlements` carries `com.apple.security.automation.apple-events`.
 
 ## 1. Decisions and PRD deviations
 
@@ -245,7 +246,7 @@ Order follows the PRD's 3-day schedule. Each task lists its exit check. The `Per
 - Targets: `~/.claude/settings.json` and `~/.codex/hooks.json`.
 - Merge rules:
   - Parse the JSON and append one entry per event, keeping every existing hook.
-  - Each entry is marked by a command containing `Perch.app/Contents/Helpers/perch`, so re-running is idempotent and "Disconnect" removes only Perch entries.
+  - Each entry is marked by a command containing `/Contents/Helpers/perch` (matching `Perch.app` and the Debug `Perch Dev.app`), so re-running is idempotent and "Disconnect" removes only Perch entries.
   - The command is guarded:
     ```sh
     P='/Applications/Perch.app/Contents/Helpers/perch'; [ -x "$P" ] && "$P" event --source claude || true
@@ -294,9 +295,9 @@ Order follows the PRD's 3-day schedule. Each task lists its exit check. The `Per
 - Add Sparkle via SPM: `SPUStandardUpdaterController`, a "Check for Updates…" menu item, an EdDSA key, and an appcast hosted on GitHub Releases.
 
 **R.2 Signing and DMG**
-- Sign with Developer ID: app and embedded `perch` CLI, hardened runtime.
+- Sign with `Perch Self-Signed` ([signing.md](signing.md)): app and embedded `perch` CLI, hardened runtime. No paid Apple account, so no Developer ID or notarization.
 - Entitlements: `com.apple.security.automation.apple-events`. Add `NSAppleEventsUsageDescription` to the Info.plist.
-- Build the DMG with `create-dmg`, then run `xcrun notarytool submit --wait` and `stapler staple`.
+- Build the DMG with `create-dmg`. Release notes tell direct downloaders to run `xattr -dr com.apple.quarantine /Applications/Perch.app`.
 - Put this in `scripts/release.sh`.
 
 **R.3 Release settings**

@@ -125,10 +125,11 @@ final class HUDSource: ActivitySource {
 
     private func startKeyTap() {
         guard !keyTap.start() else { return }
-        tapRetry = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] timer in
+        tapRetry = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self, AccessibilityPermission.isTrusted else { return }
-                if self.keyTap.start() { timer.invalidate() }
+                guard let self, AccessibilityPermission.isTrusted, self.keyTap.start() else { return }
+                self.tapRetry?.invalidate()
+                self.tapRetry = nil
             }
         }
     }

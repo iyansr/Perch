@@ -3,10 +3,10 @@
 **A native macOS launcher that lives in your notch. One hotkey, search, clipboard, live activities and your coding agents, all in one spot.**
 
 <p align="center">
-  <img alt="macOS 14 or later"
-       src="https://img.shields.io/badge/macOS-14%2B-000000?style=flat&logo=apple&logoColor=white">
-  <img alt="Swift"
-       src="https://img.shields.io/badge/Swift-F05138?style=flat&logo=swift&logoColor=white">
+  <img alt="macOS 26 or later"
+       src="https://img.shields.io/badge/macOS-26%2B-000000?style=flat&logo=apple&logoColor=white">
+  <img alt="Swift 6.2"
+       src="https://img.shields.io/badge/Swift-6.2-F05138?style=flat&logo=swift&logoColor=white">
   <a href="LICENSE">
     <img alt="License: AGPL-3.0"
          src="https://img.shields.io/badge/License-AGPL--3.0-3DA639?style=flat"></a>
@@ -38,7 +38,7 @@ Perch is not yet published as a release. Build it from source (below).
 
 ## Building from source
 
-Requirements: macOS 14 or later, Xcode with the Swift toolchain.
+Requirements: macOS 26 or later (macOS 27 recommended), Xcode 26 or later (Swift 6.2).
 
 ```sh
 git clone https://github.com/iyansr/Perch.git
@@ -47,6 +47,8 @@ open Perch.xcodeproj
 ```
 
 Run the `Perch` scheme. The Xcode build phase runs `Scripts/build-mediaremote-adapter.sh` for you.
+
+Debug builds sign with your own Apple Development team. Release builds sign with a self-signed `Perch Self-Signed` identity; create it once with `./Scripts/create-signing-identity.sh`. See [docs/signing.md](docs/signing.md).
 
 The marketing site lives in `web/` (Astro, pnpm):
 

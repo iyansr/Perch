@@ -1,5 +1,6 @@
 import AVFoundation
 import Speech
+import Synchronization
 
 /// Where the microphone hands audio to a recogniser. Called on the audio thread.
 typealias DictationAudioSink = @Sendable (AVAudioPCMBuffer) -> Void
@@ -31,9 +32,9 @@ protocol DictationEngine: AnyObject {
 }
 
 enum DictationEngines {
-    /// macOS 26's on-device `SpeechAnalyzer` when it supports the user's language, else `SFSpeechRecognizer`.
+    /// On-device `SpeechAnalyzer` when it supports the user's language, else `SFSpeechRecognizer`.
     static func make(locale: Locale = .current) async -> DictationEngine {
-        if #available(macOS 26, *), let supported = await SpeechAnalyzerEngine.supportedLocale(for: locale) {
+        if let supported = await SpeechAnalyzerEngine.supportedLocale(for: locale) {
             return SpeechAnalyzerEngine(locale: supported)
         }
         return SFSpeechEngine(locale: locale)
@@ -84,10 +85,9 @@ nonisolated final class MicrophoneCapture: @unchecked Sendable {
     }
 }
 
-// MARK: - macOS 26: SpeechAnalyzer
+// MARK: - SpeechAnalyzer
 
 /// Converts microphone buffers to the analyzer's format and queues them. Used from the audio thread only.
-@available(macOS 26, *)
 nonisolated private final class AnalyzerFeed: @unchecked Sendable {
     private let converter: AVAudioConverter?
     private let outputFormat: AVAudioFormat
@@ -127,7 +127,6 @@ nonisolated private final class AnalyzerFeed: @unchecked Sendable {
 
 /// On-device `SpeechTranscriber`. Results arrive as volatile guesses that a final result then replaces;
 /// finals after the first start with a space, so they concatenate as they are.
-@available(macOS 26, *)
 final class SpeechAnalyzerEngine: DictationEngine {
     let needsSpeechPermission = false
 
@@ -243,7 +242,7 @@ final class SpeechAnalyzerEngine: DictationEngine {
     }
 }
 
-// MARK: - macOS 14–15 (and unsupported languages): SFSpeechRecognizer
+// MARK: - Languages SpeechAnalyzer lacks: SFSpeechRecognizer
 
 private nonisolated final class RequestSink: @unchecked Sendable {
     let request: SFSpeechAudioBufferRecognitionRequest
@@ -299,19 +298,13 @@ final class SFSpeechEngine: DictationEngine {
     func finish() async -> String {
         request?.endAudio()
         if task != nil, !isFinal {
-            await withTaskGroup(of: Void.self) { group in
-                group.addTask { @MainActor [weak self] in
-                    await withCheckedContinuation { continuation in
-                        guard let self, !self.isFinal else { return continuation.resume() }
-                        self.waiter = continuation
-                    }
-                }
-                group.addTask { try? await Task.sleep(for: .seconds(3)) }
-                await group.next()
-                resume() // a continuation ignores cancellation; wake the waiter child so the group can end
-                group.cancelAll()
+            // The recogniser's last result or the deadline, whichever comes first, resumes the waiter.
+            let deadline = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(3))
+                self?.resume()
             }
-            resume()
+            await withCheckedContinuation { waiter = $0 }
+            deadline.cancel()
         }
         task?.cancel()
         task = nil
@@ -352,20 +345,15 @@ final class SFSpeechEngine: DictationEngine {
 
 /// Waits for a task with a deadline, without cancelling it: whichever finishes first resumes the caller.
 nonisolated enum DictationWait {
-    private final class Once: @unchecked Sendable {
-        private let lock = NSLock()
-        private var continuation: CheckedContinuation<Void, Never>?
+    private final class Once: Sendable {
+        private let continuation: Mutex<CheckedContinuation<Void, Never>?>
 
         init(_ continuation: CheckedContinuation<Void, Never>) {
-            self.continuation = continuation
+            self.continuation = Mutex(continuation)
         }
 
         func fire() {
-            lock.lock()
-            let pending = continuation
-            continuation = nil
-            lock.unlock()
-            pending?.resume()
+            continuation.withLock { $0.take() }?.resume()
         }
     }
 

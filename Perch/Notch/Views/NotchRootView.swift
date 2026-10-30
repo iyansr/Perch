@@ -272,8 +272,7 @@ private struct SearchFieldRow: View {
             .overlay(alignment: .leading) {
                 if let selected {
                     // An invisible copy of the query pushes the hint to where the typed text ends.
-                    (Text(model.query).foregroundStyle(.clear)
-                        + Text(" — \(selected.actionTitle)").foregroundStyle(.white.opacity(0.4)))
+                    Text("\(Text(model.query).foregroundStyle(.clear))\(Text(" — \(selected.actionTitle)").foregroundStyle(.white.opacity(0.4)))")
                         .font(Self.font)
                         .lineLimit(1)
                         .allowsHitTesting(false)

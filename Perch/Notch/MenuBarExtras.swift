@@ -6,7 +6,7 @@ import AppKit
 /// underneath the centred island. Knowing the leftmost extra lets the island step aside.
 enum MenuBarExtras {
     /// Per-app Accessibility timeout, so one hung app cannot stall the scan.
-    private static let messagingTimeout: Float = 0.1
+    private nonisolated static let messagingTimeout: Float = 0.1
 
     /// What the island knows about the extras.
     enum Reading: Equatable {

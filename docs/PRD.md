@@ -244,7 +244,7 @@ A single Swift app: AppKit owns the window and system plumbing, SwiftUI draws ev
 | Files & Folders (on drop) | Writing the converted file next to the original | Save to Downloads instead |
 | Network | Ask AI only | Ask AI hidden |
 
-**Distribution.** Signed and notarized DMG outside the Mac App Store, auto-updates with Sparkle. macOS 14 Sonoma or later.
+**Distribution.** Signed and notarized DMG outside the Mac App Store, auto-updates with Sparkle. macOS 26 or later; macOS 27 preferred.
 
 ## Build plan, risks and open questions
 

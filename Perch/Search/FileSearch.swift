@@ -16,7 +16,7 @@ final class FileSearch {
     private var debounceTask: Task<Void, Never>?
     private var observer: NSObjectProtocol?
 
-    deinit {
+    isolated deinit {
         if let observer { NotificationCenter.default.removeObserver(observer) }
     }
 

@@ -182,7 +182,7 @@ struct AirDropBannerTests {
 
 // MARK: Database
 
-private final class TestDatabase {
+private nonisolated final class TestDatabase {
     let url: URL
     private var db: OpaquePointer?
 
@@ -253,7 +253,7 @@ struct NotificationDatabaseTests {
     @Test func missingFileIsUnavailable() {
         let missing = FileManager.default.temporaryDirectory.appending(path: "notif-missing-\(UUID().uuidString)/db")
         do {
-            _ = try NotificationDatabase.open(candidates: [missing])
+            _ = try NotificationDatabase(url: missing)
             Issue.record("opened a file that does not exist")
         } catch let error as NotificationDatabaseError {
             guard case .unavailable = error else { Issue.record("expected unavailable, got \(error)"); return }
@@ -261,19 +261,13 @@ struct NotificationDatabaseTests {
             Issue.record("unexpected \(error)")
         }
     }
-
-    @Test func candidatesIncludeBothKnownLocations() {
-        let paths = NotificationDatabase.candidateURLs(home: URL(fileURLWithPath: "/Users/someone")).map(\.path)
-        #expect(paths.contains { $0.hasSuffix("com.apple.notificationcenter/db2/db") })
-        #expect(paths.contains("/Users/someone/Library/Group Containers/group.com.apple.usernoted/db2/db"))
-    }
 }
 
 struct NotificationFeedTests {
     @Test func startsAtTheNewestRowThenReportsOnlyNewOnes() throws {
         let database = try TestDatabase()
         try database.insert(appID: 1, data: try blob("notif-synthetic-messages-direct")) // delivered before the feed started
-        let feed = NotificationFeed(candidates: [database.url])
+        let feed = NotificationFeed(url: database.url)
 
         #expect(feed.pollOnce() == nil) // opens, takes the cursor
         #expect(feed.pollOnce()?.isEmpty == true)
@@ -287,7 +281,7 @@ struct NotificationFeedTests {
 
     @Test func trackedRowsReportWhenTheyLeaveTheTable() throws {
         let database = try TestDatabase()
-        let feed = NotificationFeed(candidates: [database.url])
+        let feed = NotificationFeed(url: database.url)
         _ = feed.pollOnce()
         try database.insert(appID: 2, data: try blob("notif-synthetic-airdrop"))
         let update = try #require(feed.pollOnce())
@@ -306,7 +300,7 @@ struct NotificationFeedTests {
         // The blob has no `app` key: the identifier from the `app` table names the sender.
         let database = try TestDatabase()
         let plist = try PropertyListSerialization.data(fromPropertyList: ["req": ["titl": "T", "body": "B"]], format: .binary, options: 0)
-        let feed = NotificationFeed(candidates: [database.url])
+        let feed = NotificationFeed(url: database.url)
         _ = feed.pollOnce()
         try database.insert(appID: 1, data: plist)
         #expect(feed.pollOnce()?.records.first?.bundleID == "com.apple.MobileSMS")
@@ -314,14 +308,14 @@ struct NotificationFeedTests {
 
     @Test func schemaMismatchSwitchesTheFeedOff() throws {
         let database = try TestDatabase(schema: "CREATE TABLE record (x INTEGER); CREATE TABLE app (y INTEGER);")
-        let feed = NotificationFeed(candidates: [database.url])
+        let feed = NotificationFeed(url: database.url)
         #expect(feed.pollOnce() == nil)
         #expect(feed.pollOnce() == nil) // stays off; no retry
     }
 
     @Test func unreadableDatabaseIsRetriedWithBackoff() throws {
         let missing = FileManager.default.temporaryDirectory.appending(path: "notif-late-\(UUID().uuidString).db")
-        let feed = NotificationFeed(candidates: [missing], retryEvery: 2)
+        let feed = NotificationFeed(url: missing, retryEvery: 2)
         #expect(feed.pollOnce() == nil) // tries, fails
         #expect(feed.pollOnce() == nil) // waits
         #expect(feed.pollOnce() == nil) // waits

@@ -6,7 +6,7 @@ import SwiftUI
 
 /// Hotkey dictation. The hotkey (or the card's Stop) toggles it: while it listens, a persistent activity
 /// shows the live transcript and microphone level; stopping types the text into the front app.
-/// Needs Microphone; the `SFSpeechRecognizer` engine (macOS 14–15) also needs Speech Recognition.
+/// Needs Microphone; the `SFSpeechRecognizer` engine (languages `SpeechAnalyzer` lacks) also needs Speech Recognition.
 final class DictationSource: ActivitySource {
     static let id = "dictation"
     static let info = ActivitySourceInfo(
