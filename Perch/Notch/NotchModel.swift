@@ -105,7 +105,6 @@ final class NotchModel {
         switch scope {
         case .clipboard: return "Clipboard"
         case .files: return "Files"
-        case .ai: return "Ask AI"
         case .all, .apps: break
         }
         if !query.trimmingCharacters(in: .whitespaces).isEmpty { return "Top hits" }

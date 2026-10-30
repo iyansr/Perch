@@ -18,6 +18,7 @@ struct Activity: Identifiable, Equatable {
     enum Kind: Equatable {
         case timer
         case conversion(batchID: UUID)
+        case agent(source: AgentSource, sessionID: String)
     }
 
     let id: UUID
@@ -30,6 +31,8 @@ struct Activity: Identifiable, Equatable {
     var updatedAt: Date
     /// Files the activity produced; the glance card offers to reveal them in Finder.
     var outputs: [URL] = []
+    /// Terminal an agent runs in; the glance card offers to bring it forward.
+    var terminal: AgentTerminal?
 
     /// Lower is more urgent; finished and blocked items surface before running ones.
     var urgency: Int {
@@ -121,6 +124,59 @@ final class ActivityCenter {
         if let fraction { items[index].progress = .fraction(min(max(fraction, 0), 1)) }
         if let detail { items[index].detail = detail }
         if let outputs { items[index].outputs = outputs }
+    }
+
+    // MARK: Upserted activities
+
+    /// Creates or updates the activity `id` in place, so repeated events (e.g. one agent session) share one row.
+    /// Reaching `.done`/`.failed` plays the finish feedback and schedules the auto-dismiss; going back to
+    /// `.running`/`.needsAttention` cancels a pending dismiss. Entering `.needsAttention` pulses the pill.
+    func upsert(
+        id: UUID,
+        kind: Activity.Kind,
+        symbol: String,
+        title: String,
+        detail: String?,
+        status: Activity.Status,
+        terminal: AgentTerminal? = nil
+    ) {
+        let previous = index(of: id).map { items[$0].status }
+        if let index = index(of: id) {
+            items[index].symbol = symbol
+            items[index].title = title
+            if let detail { items[index].detail = detail }
+            if let terminal { items[index].terminal = terminal }
+            items[index].updatedAt = Date()
+        } else {
+            var activity = Activity(
+                id: id,
+                kind: kind,
+                symbol: symbol,
+                title: title,
+                detail: detail ?? "",
+                status: .running,
+                progress: .indeterminate,
+                updatedAt: Date()
+            )
+            activity.terminal = terminal
+            withAnimation(NotchMotion.expand) { items.append(activity) }
+        }
+
+        guard status != previous || previous == nil else { return }
+        switch status {
+        case .done, .failed:
+            finish(id, status: status)
+        case .running, .needsAttention:
+            guard let index = index(of: id) else { return }
+            tasks.removeValue(forKey: id)?.cancel()
+            items[index].status = status
+            // A spinner reads as "working"; a full amber ring reads as "waiting for you".
+            items[index].progress = status == .needsAttention ? .fraction(1) : .indeterminate
+            if status == .needsAttention {
+                completionTick += 1
+                if AppSettings.shared.playsSounds { NSSound(named: "Ping")?.play() }
+            }
+        }
     }
 
     // MARK: Lifecycle

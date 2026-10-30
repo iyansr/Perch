@@ -79,6 +79,17 @@ struct GlanceRow: View {
     let center: ActivityCenter
 
     var body: some View {
+        // An agent row brings its terminal forward (J6); other rows leave the tap to the surface (opens Home).
+        if case .agent = activity.kind, let terminal = activity.terminal {
+            row
+                .contentShape(Rectangle())
+                .onTapGesture { TerminalFocuser.focus(terminal) }
+        } else {
+            row
+        }
+    }
+
+    private var row: some View {
         HStack(spacing: 12) {
             ActivityGlyph(activity: activity, size: 15)
                 .frame(width: 30, height: 30)
@@ -121,6 +132,10 @@ struct GlanceRow: View {
                     NSWorkspace.shared.activateFileViewerSelecting(activity.outputs)
                 }
                 .help("Reveal in Finder")
+            }
+            if case .agent = activity.kind, let terminal = activity.terminal {
+                CircleButton(symbol: "terminal") { TerminalFocuser.focus(terminal) }
+                    .help("Focus terminal")
             }
             CircleButton(symbol: "xmark") { center.dismiss(activity.id) }
         }

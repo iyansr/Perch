@@ -245,9 +245,6 @@ final class NotchController {
             NSWorkspace.shared.open(url)
         case let .clip(item):
             runClip(item, .paste)
-        case .ask:
-            // The Ask AI panel arrives with task 3.4; until then the row is display-only.
-            break
         case let .web(query):
             var components = URLComponents(string: "https://www.google.com/search")
             components?.queryItems = [URLQueryItem(name: "q", value: query)]

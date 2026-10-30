@@ -15,6 +15,7 @@ enum OnboardingMode: Equatable {
 enum OnboardingStep: CaseIterable, Identifiable {
     case hotkey
     case accessibility
+    case agents
 
     var id: Self { self }
 
@@ -22,6 +23,7 @@ enum OnboardingStep: CaseIterable, Identifiable {
         switch self {
         case .hotkey: "Open Perch from anywhere"
         case .accessibility: "Allow pasting into other apps"
+        case .agents: "Hear from your coding agents"
         }
     }
 
@@ -29,6 +31,7 @@ enum OnboardingStep: CaseIterable, Identifiable {
         switch self {
         case .hotkey: "Shortcut"
         case .accessibility: "Accessibility"
+        case .agents: "Agents"
         }
     }
 }

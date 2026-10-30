@@ -23,13 +23,11 @@ struct AppSettingsTests {
         let first = AppSettings(defaults: defaults)
         first.playsSounds = false
         first.onboardingDone = true
-        first.aiProvider = "openai"
         first.hotkey = Shortcut(keyCode: 49, carbonModifiers: 0x100)
 
         let second = AppSettings(defaults: defaults)
         #expect(second.playsSounds == false)
         #expect(second.onboardingDone == true)
-        #expect(second.aiProvider == "openai")
         #expect(second.hotkey == Shortcut(keyCode: 49, carbonModifiers: 0x100))
     }
 }

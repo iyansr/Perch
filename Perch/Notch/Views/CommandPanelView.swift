@@ -100,7 +100,6 @@ struct CommandPanelView: View {
         switch model.scope {
         case .clipboard: return "" // ClipboardListView draws its own empty states
         case .files: return hasQuery ? "No files match “\(model.query)”" : "Type to search files"
-        case .ai: return "Type a question to ask AI"
         case .all, .apps: return hasQuery ? "No results for “\(model.query)”" : "Indexing applications…"
         }
     }
@@ -113,13 +112,15 @@ struct CommandPanelView: View {
     private var footer: some View {
         HStack {
             Text(model.results.count == 1 ? "1 result" : "\(model.results.count) results")
-            Spacer()
+                .lineLimit(1)
+                .layoutPriority(-1)
+            Spacer(minLength: 8)
             HStack(spacing: 4) {
                 KeyCap("↑")
                 KeyCap("↓")
                 Text("Move").padding(.trailing, 6)
                 KeyCap("↵")
-                Text("Open").padding(.trailing, 6)
+                Text(model.selectedResult?.actionTitle ?? "Open").padding(.trailing, 6)
                 if case .file = model.selectedResult {
                     KeyCap("⌘↵")
                     Text("Reveal").padding(.trailing, 6)
@@ -127,6 +128,7 @@ struct CommandPanelView: View {
                 KeyCap("esc")
                 Text(model.searchReturnsHome ? "Home" : "Close")
             }
+            .fixedSize()
         }
         .font(.system(size: 12))
         .foregroundStyle(.secondary)
@@ -217,7 +219,6 @@ struct ResultIcon: View {
         case .web: ("globe", Color(red: 0.04, green: 0.56, blue: 0.84))
         case .file: ("doc", .gray)
         case .clip: ("doc.on.clipboard", .gray)
-        case .ask: ("sparkles", .purple)
         }
     }
 }

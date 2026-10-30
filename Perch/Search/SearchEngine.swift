@@ -2,7 +2,7 @@ import AppKit
 
 /// Chips at the top of the command panel; ⌘1… selects by position.
 enum SearchScope: Int, CaseIterable, Identifiable {
-    case all, apps, clipboard, files, ai
+    case all, apps, clipboard, files
 
     var id: Int { rawValue }
 
@@ -12,7 +12,6 @@ enum SearchScope: Int, CaseIterable, Identifiable {
         case .apps: "Apps"
         case .clipboard: "Clipboard"
         case .files: "Files"
-        case .ai: "AI"
         }
     }
 }
@@ -25,8 +24,6 @@ enum SearchResult: Identifiable, Equatable {
     case web(String)
     /// ↵ opens, ⌘↵ reveals in Finder.
     case file(URL)
-    /// "Ask AI" row.
-    case ask(String)
     /// Clipboard history row; ↵ pastes, ⌘↵ copies.
     case clip(ClipboardItem)
 
@@ -37,7 +34,6 @@ enum SearchResult: Identifiable, Equatable {
         case let .timer(duration): "timer:\(duration)"
         case let .web(query): "web:\(query)"
         case let .file(url): "file:\(url.path)"
-        case let .ask(query): "ask:\(query)"
         case let .clip(item): "clip:\(item.id)"
         }
     }
@@ -49,7 +45,6 @@ enum SearchResult: Identifiable, Equatable {
         case let .timer(duration): "Start \(TimerCommand.label(for: duration)) timer"
         case let .web(query): "Search the web for “\(query)”"
         case let .file(url): url.lastPathComponent
-        case let .ask(query): "Ask AI “\(query)”"
         case let .clip(item): item.previewText
         }
     }
@@ -62,7 +57,6 @@ enum SearchResult: Identifiable, Equatable {
         case .timer: "Command"
         case .web: "Web Search"
         case .file: "File"
-        case .ask: "Ask AI"
         case .clip(let item): item.kindLabel
         }
     }
@@ -74,7 +68,6 @@ enum SearchResult: Identifiable, Equatable {
         case .answer: "Copy"
         case .timer: "Start Timer"
         case .web: "Search Web"
-        case .ask: "Ask AI"
         case .clip: "Paste"
         }
     }
@@ -111,7 +104,6 @@ final class SearchEngine {
         if scope == .clipboard {
             return ClipboardStore.shared.search(query, filter: ClipboardPanelState.shared.filter).map(SearchResult.clip)
         }
-        if scope == .ai { return query.isEmpty ? [] : [.ask(query)] }
         guard !query.isEmpty else {
             let recents = recentApps
             return (recents.isEmpty ? Array(index.apps.prefix(Self.maxRecents)) : recents).map(SearchResult.app)

@@ -67,6 +67,12 @@ struct OnboardingCard: View {
     let state: OnboardingState
     let controller: NotchController
     @FocusState private var pageFocused: Bool
+    @State private var settingsHeight: CGFloat = 0
+
+    /// Room left in the window under the surface: card padding (36), the Done row (54) and a margin.
+    private var settingsMaxHeight: CGFloat {
+        max(200, NotchGeometry.windowSize.height - model.panelTop - 36 - 54 - 24)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -136,16 +142,24 @@ struct OnboardingCard: View {
     @ViewBuilder
     private var settingsPage: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(state.steps.enumerated()), id: \.element) { index, step in
-                if index > 0 { Divider().padding(.vertical, 12) }
-                Text(step.settingsTitle)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.bottom, 8)
-                OnboardingStepBody(step: step, state: state)
+            // Scrolls once the sections outgrow the window (e.g. while a hook diff is open).
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(state.steps.enumerated()), id: \.element) { index, step in
+                        if index > 0 { Divider().padding(.vertical, 12) }
+                        Text(step.settingsTitle)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .padding(.bottom, 8)
+                        OnboardingStepBody(step: step, state: state)
+                    }
+                    Divider().padding(.vertical, 12)
+                    SoundsToggle()
+                }
+                .onGeometryChange(for: CGFloat.self, of: \.size.height) { settingsHeight = $0 }
             }
-            Divider().padding(.vertical, 12)
-            SoundsToggle()
+            .scrollIndicators(.automatic)
+            .frame(height: min(settingsHeight, settingsMaxHeight))
             HStack {
                 Spacer()
                 Button("Done") { controller.finishOnboarding() }
@@ -186,6 +200,7 @@ private struct OnboardingStepBody: View {
         switch step {
         case .hotkey: HotkeyStepBody()
         case .accessibility: AccessibilityStepBody(state: state)
+        case .agents: AgentsStepBody()
         }
     }
 }

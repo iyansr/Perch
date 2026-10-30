@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		000000000000000300000001 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000310000001 /* GRDB */; };
 		000000000000000300000002 /* libwebp in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000310000002 /* libwebp */; };
+		000000000000000300000003 /* perch in Copy perch CLI */ = {isa = PBXBuildFile; fileRef = 000000000000000000000122 /* perch */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -19,11 +20,31 @@
 			remoteGlobalIDString = 000000000000000100000000;
 			remoteInfo = Perch;
 		};
+		000000000000000450000000 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 000000000000000000000000 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 000000000000000400000000;
+			remoteInfo = PerchCLI;
+		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		000000000000000150000000 /* Copy perch CLI */ = {
+			isa = PBXCopyFilesBuildPhase;
+			dstPath = Contents/Helpers;
+			dstSubfolder = Wrapper;
+			files = (
+				000000000000000300000003 /* perch in Copy perch CLI */,
+			);
+			name = "Copy perch CLI";
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		000000000000000000000120 /* Perch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Perch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		000000000000000000000121 /* PerchTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PerchTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		000000000000000000000122 /* perch */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = perch; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -35,6 +56,16 @@
 		000000000000000000000011 /* PerchTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = PerchTests;
+			sourceTree = "<group>";
+		};
+		000000000000000000000012 /* Shared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		000000000000000000000013 /* PerchCLI */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = PerchCLI;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -52,6 +83,11 @@
 			files = (
 			);
 		};
+		000000000000000430000000 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			files = (
+			);
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -60,6 +96,8 @@
 			children = (
 				000000000000000000000010 /* Perch */,
 				000000000000000000000011 /* PerchTests */,
+				000000000000000000000012 /* Shared */,
+				000000000000000000000013 /* PerchCLI */,
 				000000000000000000000020 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -69,6 +107,7 @@
 			children = (
 				000000000000000000000120 /* Perch.app */,
 				000000000000000000000121 /* PerchTests.xctest */,
+				000000000000000000000122 /* perch */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -83,11 +122,16 @@
 				000000000000000120000000 /* Sources */,
 				000000000000000130000000 /* Frameworks */,
 				000000000000000140000000 /* Resources */,
+				000000000000000150000000 /* Copy perch CLI */,
 			);
 			buildRules = (
 			);
+			dependencies = (
+				000000000000000460000000 /* PBXTargetDependency */,
+			);
 			fileSystemSynchronizedGroups = (
 				000000000000000000000010 /* Perch */,
+				000000000000000000000012 /* Shared */,
 			);
 			name = Perch;
 			packageProductDependencies = (
@@ -119,6 +163,24 @@
 			productReference = 000000000000000000000121 /* PerchTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		000000000000000400000000 /* PerchCLI */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 000000000000000410000000 /* Build configuration list for PBXNativeTarget "PerchCLI" */;
+			buildPhases = (
+				000000000000000420000000 /* Sources */,
+				000000000000000430000000 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			fileSystemSynchronizedGroups = (
+				000000000000000000000012 /* Shared */,
+				000000000000000000000013 /* PerchCLI */,
+			);
+			name = PerchCLI;
+			productName = perch;
+			productReference = 000000000000000000000122 /* perch */;
+			productType = "com.apple.product-type.tool";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -135,6 +197,9 @@
 					000000000000000200000000 = {
 						CreatedOnToolsVersion = 26.3;
 						TestTargetID = 000000000000000100000000;
+					};
+					000000000000000400000000 = {
+						CreatedOnToolsVersion = 27.0;
 					};
 				};
 			};
@@ -158,6 +223,7 @@
 			targets = (
 				000000000000000100000000 /* Perch */,
 				000000000000000200000000 /* PerchTests */,
+				000000000000000400000000 /* PerchCLI */,
 			);
 		};
 /* End PBXProject section */
@@ -186,6 +252,11 @@
 			files = (
 			);
 		};
+		000000000000000420000000 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			files = (
+			);
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -193,6 +264,11 @@
 			isa = PBXTargetDependency;
 			target = 000000000000000100000000 /* Perch */;
 			targetProxy = 000000000000000250000000 /* PBXContainerItemProxy */;
+		};
+		000000000000000460000000 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 000000000000000400000000 /* PerchCLI */;
+			targetProxy = 000000000000000450000000 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -332,6 +408,7 @@
 		000000000000000111000000 /* Debug configuration for PBXNativeTarget "Perch" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Perch.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_APP_SANDBOX = NO;
@@ -341,6 +418,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Perch;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Perch brings the terminal tab of an agent that needs you to the front.";
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 0.1;
@@ -360,6 +438,7 @@
 		000000000000000112000000 /* Release configuration for PBXNativeTarget "Perch" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Perch.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_APP_SANDBOX = NO;
@@ -369,6 +448,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = Perch;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Perch brings the terminal tab of an agent that needs you to the front.";
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 0.1;
@@ -439,6 +519,46 @@
 			};
 			name = Release;
 		};
+		000000000000000411000000 /* Debug configuration for PBXNativeTarget "PerchCLI" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "devplaceholder.$(PROJECT_UNIQUE_VALUE:identifier).perch";
+				PRODUCT_MODULE_NAME = PerchCLI;
+				PRODUCT_NAME = perch;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		000000000000000412000000 /* Release configuration for PBXNativeTarget "PerchCLI" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = "devplaceholder.$(PROJECT_UNIQUE_VALUE:identifier).perch";
+				PRODUCT_MODULE_NAME = PerchCLI;
+				PRODUCT_NAME = perch;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -463,6 +583,14 @@
 			buildConfigurations = (
 				000000000000000211000000 /* Debug configuration for PBXNativeTarget "PerchTests" */,
 				000000000000000212000000 /* Release configuration for PBXNativeTarget "PerchTests" */,
+			);
+			defaultConfigurationName = Release;
+		};
+		000000000000000410000000 /* Build configuration list for PBXNativeTarget "PerchCLI" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				000000000000000411000000 /* Debug configuration for PBXNativeTarget "PerchCLI" */,
+				000000000000000412000000 /* Release configuration for PBXNativeTarget "PerchCLI" */,
 			);
 			defaultConfigurationName = Release;
 		};

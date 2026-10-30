@@ -14,28 +14,32 @@ Commit `60fc978` (scaffold) builds clean (`xcodebuild -scheme Perch`, Debug). Mo
 | Global hotkey | Partial: fixed ⌥Space, no user choice | `Hotkey/HotkeyManager.swift` |
 | App search, ↑↓ ↵ esc, click-outside close, recents | Done | `Search/AppIndex.swift`, `SearchEngine.swift` |
 | Inline math + units, web fallback | Done | `Search/Calculator.swift`, `UnitConverter.swift` |
-| Chips | Done: All, Apps, Clipboard, Files, AI | `SearchScope` in `SearchEngine.swift`, `Search/FileSearch.swift` |
+| Chips | Done: All, Apps, Clipboard, Files (AI chip removed, decision 11) | `SearchScope` in `SearchEngine.swift`, `Search/FileSearch.swift` |
 | ActivityCenter + timer (`t 25m`), pause/resume, 8 s auto-dismiss, sound toggle | Done | `Activities/*` |
 | F2 Clipboard, F4 Drop-to-convert | Code + unit tests done; manual exit checks (J3, J4, Finder drag) pending | `Clipboard/*`, `Convert/*`, `Notch/DropZoneController.swift` |
-| F5 Ask AI, F6 Agents | Not started | — |
-| J1 Onboarding, hotkey recorder, settings | Done | `Onboarding/*`, `Hotkey/*`, `App/AppSettings.swift` |
-| Unit test target | Done (`PerchTests`, 64 tests) | `PerchTests/` |
+| F6 Agents: `perch` CLI, socket bridge, hook installer, terminal focus | Code + unit tests done; verified with a real `claude -p` session through Perch hooks; J6 tab focus and "connect on this machine" pending | `PerchCLI/`, `Shared/AgentEvent.swift`, `Agents/*` |
+| F5 Ask AI | Dropped from v0.1 (decision 11); the AI chip is removed too | — |
+| J1 Onboarding, hotkey recorder, settings | Done; step 3 (agents) added | `Onboarding/*`, `Hotkey/*`, `App/AppSettings.swift` |
+| Unit test target | Done (`PerchTests`, 95 tests) | `PerchTests/` |
 | Signing, notarization, Sparkle, DMG | Not started | — |
 
-Project facts: macOS 14 target, no sandbox, hardened runtime on, `LSUIElement = YES`, default actor isolation `MainActor`, file-system-synchronized groups (new files under `Perch/` join the target automatically), no SPM dependencies yet.
+Project facts: macOS 14 target, no sandbox, hardened runtime on, `LSUIElement = YES`, default actor isolation `MainActor`, file-system-synchronized groups (new files under `Perch/` join the target automatically). Targets: `Perch` (app), `PerchCLI` (product `perch`, module `PerchCLI` so it does not clash with `Perch` on a case-insensitive disk), `PerchTests`. `Shared/` is compiled into both the app and the CLI. SPM: GRDB, libwebp. `Perch.entitlements` carries `com.apple.security.automation.apple-events`.
 
 ## 1. Decisions and PRD deviations
 
 Facts below came from inspecting this machine (Claude Code 2.1.312, codex-cli 0.164.0). Each item needs sign-off only if marked **Decide**.
 
 1. **WebP output needs a library.** `CGImageDestinationCopyTypeIdentifiers()` on macOS returns jpeg, png, jpeg-2000, heic, heics — no WebP. `sips` uses the same ImageIO encoders. Plan: add SPM `SDWebImage/libwebp-Xcode` and encode WebP through it; all other formats stay on ImageIO.
-2. **Codex supports hooks now.** `~/.codex/hooks.json` uses the same schema as Claude Code hooks and includes `permission_request`, `stop`, `session_start`, `session_end`, and `user_prompt_submit`. The `notify` program in `config.toml` only fires on turn completion. Plan: connect Codex through `hooks.json`, so "needs input" works for both agents. The `notify` path is dropped.
+2. **Codex supports hooks now.** `~/.codex/hooks.json` uses the same schema as Claude Code hooks, including the PascalCase event names (`SessionStart`, `PermissionRequest`, `Stop`, …; checked against captured payloads). The `notify` program in `config.toml` only fires on turn completion. Plan: connect Codex through `hooks.json`, so "needs input" works for both agents. The `notify` path is dropped. Codex runs a new hook only after the user approves it in Codex; it records approval in `config.toml` as `[hooks.state."<hooks.json>:<event>:<group>:<hook>"]`. Perch never writes those entries, appends its group after existing ones (so other tools' indexes do not shift), and shows "Open Codex and approve Perch's hooks" until the entries appear.
 3. **Claude Code "needs input" uses `PermissionRequest`.** Claude Code has a dedicated `PermissionRequest` hook, plus `Notification` for idle prompts. Plan: subscribe to `SessionStart`, `UserPromptSubmit`, `PermissionRequest`, `Notification`, `PostToolUse` (clears needs-input after approval), `Stop`, `StopFailure`, `SessionEnd`.
 4. **Decide — CLI name.** The PRD says `notch event` / `notch watch`. Plan uses `perch` to match the app and avoid collisions with other notch apps.
-5. **Decide — ⌘-digit chip order.** F1 lists chips `All, Apps, Clipboard, Files, AI` (Clipboard = ⌘3). J3 says ⌘2 opens Clipboard. Plan keeps the F1 order; J3 and the demo script are updated to ⌘3.
+5. **Decide — ⌘-digit chip order.** F1 lists chips `All, Apps, Clipboard, Files, AI` (Clipboard = ⌘3). J3 says ⌘2 opens Clipboard. Plan keeps the F1 order without AI; J3 and the demo script are updated to ⌘3.
 6. **Clipboard storage:** GRDB via SPM, as in the PRD. Image payloads are stored as files under Application Support, not as blobs, to keep the DB small and queries fast.
 7. **Hotkey:** keep the Carbon `HotkeyManager` and add a small in-app recorder. The KeyboardShortcuts package is not needed.
 8. **Hooks are guarded.** Every hook command written to an agent config is a no-op when Perch is not installed. This matches how other tools on this machine write hooks (`[ -x … ] && … || true`). Uninstalling Perch never breaks an agent.
+9. **`SessionStart` only tracks the session.** A freshly opened agent waiting for its first prompt is not "running", so `SessionStart` shows nothing; the first `UserPromptSubmit` creates the row.
+10. **Codex `Interrupt` ends a turn.** Codex has no `Notification` / `StopFailure`; its `Interrupt` event (the user cancelled a turn) maps to done, so the row does not spin until the 30 min timeout.
+11. **Ask AI (F5) is dropped from v0.1.** Removed with it: the AI chip, the `.ask` result, Tab-to-ask, the onboarding/settings key step, Keychain storage and the `aiProvider` setting. The demo and acceptance matrix skip J5 / F5-a.
 
 ## 2. Architecture additions
 
@@ -47,22 +51,23 @@ Perch/
   Search/         (existing) + FileSearch.swift (NSMetadataQuery)
   Clipboard/      ClipboardMonitor.swift, ClipboardStore.swift, ClipboardItem.swift, Paster.swift
   Convert/        ImageConverter.swift, ConversionAction.swift, ConversionJob.swift
-  AI/             AIClient.swift, AnthropicProvider.swift, OpenAIProvider.swift, SSEParser.swift, Keychain.swift, AnswerView.swift
-  Agents/         AgentBridge.swift (socket server), AgentEvent.swift (shared wire format), AgentSessions.swift,
-                  HookInstaller.swift, TerminalFocuser.swift
-  Onboarding/     OnboardingView.swift, OnboardingState.swift
-PerchCLI/         main.swift (`perch event`, `perch watch`), shares AgentEvent.swift
-PerchTests/       unit tests
+  (AI/ — dropped with Ask AI, decision 11)
+  Agents/         AgentBridge.swift (socket server), AgentSessions.swift, AgentConnections.swift (connect state),
+                  HookInstaller.swift, OrderedJSON.swift (key-order-preserving JSON), UnifiedDiff.swift,
+                  TerminalFocuser.swift
+  Onboarding/     OnboardingView.swift, OnboardingState.swift, AgentStepViews.swift
+Shared/           AgentEvent.swift (wire format), compiled into the app and the CLI
+PerchCLI/         main.swift (`perch event`, `perch watch`)
+PerchTests/       unit tests; Fixtures/ holds hook payloads captured from Claude Code 2.1.312 and codex-cli 0.164.0
 ```
 
 ### Shared contracts
 
-**`SearchScope`** grows to `all, apps, clipboard, files, ai`. ⌘1–⌘5 already map by `rawValue`.
+**`SearchScope`** is `all, apps, clipboard, files`. ⌘1–⌘4 map by `rawValue`. (An `ai` chip existed until Ask AI was dropped.)
 
 **`SearchResult`** gains:
 - `.clip(ClipboardItem)`: ↵ pastes, ⌘↵ copies.
 - `.file(URL)`: ↵ opens, ⌘↵ reveals in Finder.
-- `.ask(String)`: the "Ask AI" row, also triggered by Tab.
 
 **`Activity.Kind`** grows to `.timer`, `.conversion(batchID)` and `.agent(source: AgentSource, sessionID: String)`. Glance actions per kind:
 
@@ -87,13 +92,14 @@ Add `ActivityCenter.upsert(id:…)`, so repeated agent events update one row and
 
 | Hook event | Status |
 | --- | --- |
-| `SessionStart`, `UserPromptSubmit`, `PostToolUse` | running |
+| `UserPromptSubmit`, `PostToolUse` | running |
+| `SessionStart` | tracked, no row (decision 9) |
 | `PermissionRequest`, `Notification` | needsAttention |
-| `Stop` | done |
+| `Stop`, `Interrupt` (Codex) | done |
 | `StopFailure` | failed |
 | `SessionEnd` | dismiss |
 
-Codex uses the same events in snake_case.
+Both agents send PascalCase names; the CLI normalises them to snake_case on the wire. `perch watch` sends `start` (running) and `exit` (done on code 0, failed otherwise).
 
 ## 3. Work plan
 
@@ -104,7 +110,7 @@ Order follows the PRD's 3-day schedule. Each task lists its exit check. The `Per
 **1.1 Test target + settings model**
 - Add the `PerchTests` unit-test target (hosted by Perch).
 - Port boundary tests for `TimerCommand.parse`, `Calculator.evaluate`, `UnitConverter.convert` (`24*7`, `5 km to mi`, `t 1h30m`, `t 0`, `t 25h`).
-- Add `AppSettings` with the following keys: `hotkey`, `onboardingDone`, `playsSounds` (move from `ActivityCenter`), `aiProvider`, `clipboardEnabled`.
+- Add `AppSettings` with the following keys: `hotkey`, `onboardingDone`, `playsSounds` (move from `ActivityCenter`), `clipboardEnabled`. (`aiProvider` was removed with Ask AI.)
 - Exit: `xcodebuild test` green.
 
 **1.2 Configurable hotkey**
@@ -120,17 +126,17 @@ Order follows the PRD's 3-day schedule. Each task lists its exit check. The `Per
   1. Hotkey recorder, prefilled ⌥Space.
   2. Accessibility, via `AXIsProcessTrustedWithOptions` with prompt. "Skip" keeps copy-only mode, and the status is polled every 1 s while the step shows.
   3. Connect Claude Code / Codex, using the buttons from task 3.2. A diff sheet appears before any write.
-- Optional: an API key field (task 3.4).
+- ~~Optional: an API key field (task 3.4).~~ Dropped with Ask AI.
 - On finish, the card collapses into the notch with "Press ⌥Space anytime" for 2 s.
 - The pill's context menu gains "Settings…", which reopens the same card as a single settings page. This is the only settings surface, as the PRD scopes it.
 - Exit: delete defaults → relaunch → full J1 flow on both notch and island.
 
-**1.4 Chips: Clipboard, Files, AI**
-- Add the three scopes and their chip UI.
+**1.4 Chips: Clipboard, Files (AI removed, decision 11)**
+- Add the scopes and their chip UI.
 - Files: `FileSearch` wraps `NSMetadataQuery` (`kMDItemFSName LIKE[cd] "*q*"`, home + /Applications scope, 30 results, debounced at 120 ms).
-- AI: shows the `.ask` row only.
+- ~~AI: shows the `.ask` row only.~~ Removed with Ask AI.
 - Typing `clip ` in All switches to Clipboard and strips the prefix.
-- Exit: ⌘1–⌘5 switch chips; files open on ↵.
+- Exit: ⌘1–⌘4 switch chips; files open on ↵.
 
 ### Day 2 — Clipboard history (F2) and Drop-to-convert (F4)
 
@@ -166,7 +172,7 @@ Order follows the PRD's 3-day schedule. Each task lists its exit check. The `Per
 - Layout: Raycast-style split. Two widths: home, onboarding and drop zone use the default `NotchGeometry.panelWidth` = 480; search mode (search row + results, including clipboard) uses `NotchGeometry.searchPanelWidth` = 520, and the surface morphs out from home to it. Both fit in the 760 pt `windowSize`. Left: 250 pt list, each row a text preview, image thumbnail, file icon or colour swatch; pinned rows under a "Pinned" header. Right: preview of the selected clip (monospaced text, fitted image, file list, colour swatch) over an "Information" table (source app, type, characters/words, dimensions/size, copied time). Click selects, double-click pastes. Selection lands on the newest unpinned row after any reset.
 - Thumbnails: decode a 256 px derivative for rows and a 900 px one for the selected-row preview, cached in memory. Never decode the full bitmap per row.
 - Footer: "Clear history" (with a confirm step) and the type filter on the left; `⌘↵ Copy`, `⌘. Pin` hints and a primary "Paste to <App> ↵" button on the right, naming the app that had focus when the panel opened.
-- Type filter: a fixed-width popover (about 200 pt) on ⌘P, opened on the active filter. A filter that empties the list shows "No <type> in history", not "history is empty". ⌘P does not clash with the ⌘1–⌘5 chips.
+- Type filter: a fixed-width popover (about 200 pt) on ⌘P, opened on the active filter. A filter that empties the list shows "No <type> in history", not "history is empty". ⌘P does not clash with the ⌘1–⌘4 chips.
 - Chords:
 
   | Chord | Action |
@@ -211,17 +217,18 @@ Order follows the PRD's 3-day schedule. Each task lists its exit check. The `Per
   - The original file's hash is unchanged after conversion.
 - Exit: 4 MB HEIC → JPG in < 2 s on Apple Silicon (log the timing); J4 end-to-end.
 
-### Day 3 — Agents (F6), Ask AI (F5), demo
+### Day 3 — Agents (F6), demo
 
 **3.1 AgentBridge + `perch` CLI**
 - New command-line tool target `PerchCLI`, product `perch`, copied into `Perch.app/Contents/Helpers/` by a Copy Files phase.
 - `perch event --source claude|codex`:
   1. Reads the hook JSON from stdin.
   2. Picks `session_id`, `cwd`, `hook_event_name`, `message`/`tool_name`.
-  3. Adds `TERM_PROGRAM`, the tty (`ttyname(STDIN)` falls back to the parent's tty via `ps`), and the ancestor shell pid.
+  3. Adds `TERM_PROGRAM`, `__CFBundleIdentifier` (the launching terminal app), the tty (`ttyname(STDIN)`, else the nearest ancestor's controlling tty read with `sysctl(KERN_PROC_PID)`, no `ps` subprocess), and the user's shell pid (the first shell above the agent process). Tool output and file contents are dropped: the line carries only a ≤160-character summary.
   4. Writes one line to the socket with a 200 ms connect timeout.
   5. Always exits 0 and prints nothing, so the agent is never blocked or altered.
-- `perch watch -- <cmd>` runs the command with inherited stdio, sends `start`, then `exit` with the code and duration, and forwards the child's exit code.
+- `perch watch -- <cmd>` runs the command with inherited stdio, sends `start`, then `exit` with the code and duration, and forwards the child's exit code (`128 + signal` when killed, 127 when it cannot start).
+- `PERCH_SOCKET` overrides the socket path; tests use it to run the real helper against a temporary socket.
 - `AgentBridge`:
   - A `DispatchSource`-driven Unix socket server. The socket file uses mode 0600, and any stale socket is removed at launch.
   - Decoded events are passed to `AgentSessions`, which maps them to `ActivityCenter.upsert` using the table in §2.
@@ -241,7 +248,7 @@ Order follows the PRD's 3-day schedule. Each task lists its exit check. The `Per
     ```
     The path is resolved from `Bundle.main` at install time.
 - Before writing:
-  1. Show a unified diff (old vs new pretty-printed JSON) in a sheet with Connect / Cancel.
+  1. Show a unified diff (old vs new JSON) inline in the card, with Connect / Cancel. The file is edited key-order-preserving, so the diff shows only Perch's lines and an untouched file round-trips byte for byte (checked on this machine's real configs).
   2. Back up to `<file>.perch-backup-<timestamp>`.
   3. Write atomically.
 - Version check at launch: run `claude --version` / `codex --version`, found on PATH via a login shell `zsh -lc`, with a 2 s timeout. Store the result, and show "Untested version" in Settings if it is newer than the tested major version.
@@ -257,12 +264,12 @@ Order follows the PRD's 3-day schedule. Each task lists its exit check. The `Per
 - For Terminal and iTerm, also select the tab whose tty matches, via AppleScript. This needs the Automation permission, requested on first use. If it is declined, activating the app is enough.
 - Exit: J6 click focuses the right Terminal tab.
 
-**3.4 Ask AI**
+**3.4 Ask AI — deferred, not in v0.1 (decision 11).** It was built and then removed. The spec below is kept for a later version.
 - `Keychain` holds a generic password per provider (`com.perch.ai.anthropic` / `.openai`).
 - `AIClient.stream(prompt, context)` uses `URLSession.bytes(for:)` and an `SSEParser`:
   - Anthropic: `POST /v1/messages`, `stream: true`; reads `content_block_delta.text`.
   - OpenAI: `POST /v1/chat/completions`, `stream: true`; reads `choices[0].delta.content`.
-  - The model ID is a constant per provider and can be changed in Settings.
+  - The model ID is a constant per provider (`claude-sonnet-5-5`, `gpt-6.1-terra` with `reasoning_effort: none`) and can be changed in Settings.
 - Tab in the search field (only when the query is non-empty) switches to the AI chip and starts the stream.
 - `AnswerView` renders Markdown blocks: paragraphs, fenced code with a monospaced background, lists, and inline styles through `AttributedString(markdown:)`. The panel grows up to `windowSize` and scrolls after that.
 - ⌘C copies the raw Markdown. esc cancels the task and closes.
@@ -305,7 +312,7 @@ Run on a notched MacBook and in clamshell with an external display. Every row ma
 | F3-a | 25 min timer survives panel close/reopen | Start, open/close panel 5×, countdown continuous |
 | F3-b | Finish animation + sound, sound toggle works | `t 5s` with toggle on/off |
 | F4-a | 4 MB HEIC → JPG < 2 s, original untouched | Logged duration; SHA-256 before/after |
-| F5-a | First token < 1.5 s; no-key shows setup | Logged; delete key and press Tab |
+| F5-a | Deferred with Ask AI | — |
 | F6-a | Claude permission prompt → amber < 1 s | Real session: ask Claude to run a shell command |
 | J7 | Lid close/open switches modes without restart | Close lid with external display, then reopen |
 | Spaces | Panel shows over a full-screen app | Safari full screen, press hotkey |
@@ -331,4 +338,5 @@ These stay out of v0.1:
 - Multi-monitor islands (main screen only)
 - Localisation
 - Battery in the island
-- Settings beyond hotkey, API key, agent connect, sounds, and launch at login
+- Ask AI (F5), deferred (decision 11)
+- Settings beyond hotkey, agent connect, sounds, and launch at login
