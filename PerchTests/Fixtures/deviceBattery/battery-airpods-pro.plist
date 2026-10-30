@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- IOBluetoothDevice battery properties of AirPods Pro, mapped to IORegistry key names.
+     Combined is reported alongside the parts; Single is 0 (not reported). -->
+<plist version="1.0">
+<dict>
+	<key>BatteryPercentLeft</key>
+	<integer>80</integer>
+	<key>BatteryPercentRight</key>
+	<integer>75</integer>
+	<key>BatteryPercentCase</key>
+	<integer>50</integer>
+	<key>BatteryPercentCombined</key>
+	<integer>77</integer>
+	<key>BatteryPercentSingle</key>
+	<integer>0</integer>
+</dict>
+</plist>

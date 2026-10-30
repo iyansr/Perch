@@ -144,7 +144,7 @@ private struct NotchSurface: View {
         case .open:
             SearchFieldRow(model: model, topInset: model.geometry.style == .notch ? model.geometry.notchSize.height : 0)
                 .transition(.notchContent)
-        case .glance where !model.activities.items.isEmpty:
+        case .glance where model.hasGlance:
             GlanceCard(model: model)
                 .transition(.notchContent)
         case .onboarding:

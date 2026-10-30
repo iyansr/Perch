@@ -69,7 +69,11 @@ private struct HomeModules: View {
         VStack(spacing: 8) {
             ActivityModule(model: model, controller: controller)
             HStack(spacing: 8) {
-                TimerModule(center: model.activities)
+                if let media = model.activities.items.first(where: { $0.media != nil })?.media {
+                    MusicModule(media: media)
+                } else {
+                    TimerModule(center: model.activities)
+                }
                 ClipboardModule(controller: controller)
             }
             .fixedSize(horizontal: false, vertical: true)
@@ -99,7 +103,7 @@ private struct ActivityModule: View {
     private static let maxRows = 3
 
     var body: some View {
-        let activities = model.activities.sorted
+        let activities = model.activities.listedItems
         if activities.isEmpty {
             ModuleCard(minHeight: 0) {
                 ModuleHeader(title: "Activity")
@@ -161,9 +165,10 @@ private struct CompactActivityRow: View {
 }
 
 /// The running timer as a big clock (click pauses or resumes), otherwise one-click presets.
+/// Pomodoro shows its phase and today's completed cycles.
 private struct TimerModule: View {
     let center: ActivityCenter
-    private static let presets: [TimeInterval] = [5 * 60, 25 * 60, 50 * 60]
+    private static let presets: [TimeInterval] = [5 * 60, 25 * 60]
 
     var body: some View {
         if let timer = center.sorted.first(where: { $0.kind == .timer && $0.status == .running }) {
@@ -172,7 +177,7 @@ private struct TimerModule: View {
                 if paused { center.resume(timer.id) } else { center.pause(timer.id) }
             } label: {
                 VStack(alignment: .leading, spacing: 0) {
-                    ModuleHeader(title: "Timer · \(timer.detail)")
+                    ModuleHeader(title: "\(timer.title) · \(timer.detail)")
                     HStack {
                         clock(timer)
                             .font(.system(size: 28, weight: .semibold).monospacedDigit())
@@ -195,13 +200,27 @@ private struct TimerModule: View {
                     .padding(.top, 8)
                 HStack(spacing: 6) {
                     ForEach(Self.presets, id: \.self) { duration in
-                        Button(TimerCommand.label(for: duration)) { center.startTimer(duration: duration) }
+                        Button(TimerCommand.label(for: duration)) { center.startTimer(.single(duration)) }
                             .buttonStyle(ChipButtonStyle())
                     }
+                    Button("Pomodoro") { center.startTimer(.pomodoro) }
+                        .buttonStyle(ChipButtonStyle())
+                        .help(TimerPlan.pomodoro.label)
                 }
                 .padding(.top, 10)
+                if let note = pomodoroNote { Text(note).moduleNote() }
             }
         }
+    }
+
+    /// "3 today · 4-day streak"; nil before the first cycle.
+    private var pomodoroNote: String? {
+        let log = PomodoroLog.shared
+        let today = log.cycles()
+        let streak = log.streak()
+        guard today > 0 || streak > 0 else { return nil }
+        let cycles = today == 1 ? "1 Pomodoro today" : "\(today) Pomodoros today"
+        return streak > 1 ? "\(cycles) · \(streak)-day streak" : cycles
     }
 
     @ViewBuilder
@@ -211,8 +230,39 @@ private struct TimerModule: View {
             Text(timerInterval: start...end, countsDown: true)
         case let .paused(remaining, _):
             Text(TimerCommand.clock(remaining))
-        case .indeterminate, .fraction:
+        case .indeterminate, .fraction, .level, .waveform:
             EmptyView()
+        }
+    }
+}
+
+/// Takes the Timer module's slot while something plays: artwork, track and transport.
+private struct MusicModule: View {
+    let media: NowPlaying
+
+    var body: some View {
+        let source = ActivitySources.shared.nowPlaying
+        ModuleCard {
+            ModuleHeader(title: "Music")
+            HStack(spacing: 10) {
+                Button { source.openPlayer() } label: { ArtworkView(image: media.artwork, size: 36) }
+                    .buttonStyle(.plain)
+                    .help("Open the player")
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(media.title)
+                        .font(.system(size: 12, weight: .semibold))
+                    Text(media.artist)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.6))
+                }
+                .lineLimit(1)
+                Spacer(minLength: 0)
+                Waveform(playing: media.isPlaying, height: 12)
+            }
+            .padding(.top, 8)
+            TransportControls(media: media, source: source, playSize: 16, skipSize: 13, spacing: 14)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 4)
         }
     }
 }
@@ -323,7 +373,7 @@ private struct HomeActivityPage: View {
     let controller: NotchController
 
     var body: some View {
-        let activities = model.activities.sorted
+        let activities = model.activities.listedItems
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 Button { controller.showHomePage(.modules) } label: {

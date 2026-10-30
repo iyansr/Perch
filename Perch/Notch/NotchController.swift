@@ -15,6 +15,8 @@ final class NotchController {
     /// Runs the conversion the user picks from the drop zone's action list.
     let converter: ImageConverter
     let dropZone: DropZoneController
+    /// Pending collapse of a lingering music card.
+    private var glanceCollapse: DispatchWorkItem?
 
     init(activities: ActivityCenter, search: SearchEngine) {
         model = NotchModel(geometry: screens.geometry, activities: activities, search: search)
@@ -240,8 +242,8 @@ final class NotchController {
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(value, forType: .string)
             close()
-        case let .timer(duration):
-            model.activities.startTimer(duration: duration)
+        case let .timer(plan):
+            model.activities.startTimer(plan)
             close()
         case let .file(url):
             close(restoreFocus: false)
@@ -539,22 +541,45 @@ final class NotchController {
         // Even while open, clicks outside the surface fall through to the app underneath;
         // the global monitor then closes the panel and the click still lands where the user aimed.
         panel.ignoresMouseEvents = !inside
+        if inside {
+            glanceCollapse?.cancel()
+            glanceCollapse = nil
+        }
 
         switch model.state {
         case .open, .home, .onboarding, .dropZone:
             break
         case .idle:
             guard inside != model.isHovering else { return }
-            withAnimation(inside && !model.activities.items.isEmpty ? NotchMotion.expand : NotchMotion.hover) {
+            withAnimation(inside && model.hasGlance ? NotchMotion.expand : NotchMotion.hover) {
                 model.isHovering = inside
-                if inside, !model.activities.items.isEmpty { model.state = .glance }
+                if inside, model.hasGlance { model.state = .glance }
             }
         case .glance:
             guard !inside else { return }
-            withAnimation(NotchMotion.collapse) {
-                model.state = .idle
-                model.isHovering = false
+            // The music card lingers, so a control click that drifts past the edge does not collapse it.
+            guard model.glanceShowsMusicCard else {
+                collapseGlance()
+                return
             }
+            guard glanceCollapse == nil else { return }
+            let work = DispatchWorkItem { [weak self] in
+                guard let self else { return }
+                glanceCollapse = nil
+                if !isMouseInside { collapseGlance() }
+            }
+            glanceCollapse = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.musicCardLinger, execute: work)
+        }
+    }
+
+    private static let musicCardLinger: TimeInterval = 2
+
+    private func collapseGlance() {
+        guard model.state == .glance else { return }
+        withAnimation(NotchMotion.collapse) {
+            model.state = .idle
+            model.isHovering = false
         }
     }
 }

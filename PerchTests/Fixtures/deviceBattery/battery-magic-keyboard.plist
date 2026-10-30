@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- AppleDeviceManagementHIDEventService entry of a Magic Keyboard (subset of `ioreg -r -l -c AppleDeviceManagementHIDEventService`). -->
+<plist version="1.0">
+<dict>
+	<key>Product</key>
+	<string>Magic Keyboard with Touch ID</string>
+	<key>DeviceAddress</key>
+	<string>c0-44-42-da-ad-0a</string>
+	<key>BatteryPercent</key>
+	<integer>64</integer>
+	<key>BatteryStatusFlags</key>
+	<integer>0</integer>
+	<key>VendorID</key>
+	<integer>76</integer>
+</dict>
+</plist>

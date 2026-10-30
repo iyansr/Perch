@@ -46,8 +46,10 @@ private struct AgentRow: View {
         let status = connections.status(of: agent)
         let installed = connections.isInstalled(agent)
         HStack(alignment: .center, spacing: 10) {
-            Image(systemName: agent == .claude ? "sparkle" : "chevron.left.forwardslash.chevron.right")
-                .font(.system(size: 14, weight: .semibold))
+            (agent.logo ?? Image(systemName: "terminal"))
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 14, height: 14)
                 .frame(width: 28, height: 28)
                 .background(Circle().fill(Color.primary.opacity(0.08)))
             VStack(alignment: .leading, spacing: 2) {

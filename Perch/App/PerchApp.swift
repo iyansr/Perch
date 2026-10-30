@@ -21,15 +21,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.start()
         self.controller = controller
         ClipboardMonitor.shared.start()
-        // A test run hosts the app; it must not take over the socket of the Perch the user is running.
+        // A test run hosts the app; it must not take over the socket of the Perch the user is running,
+        // nor spawn media helpers and system listeners.
         if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
             startAgentBridge(activities: activities)
+            ActivitySources.shared.start(center: activities)
         }
         AgentConnections.shared.refresh()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         agentBridge?.stop()
+        ActivitySources.shared.stopAll() // resumes Apple's HUD if Perch hid it
     }
 
     private func startAgentBridge(activities: ActivityCenter) {

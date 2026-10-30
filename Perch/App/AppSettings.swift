@@ -10,7 +10,12 @@ final class AppSettings {
         static let onboardingDone = "perch.onboardingDone"
         static let playsSounds = "perch.playsSounds"
         static let clipboardEnabled = "perch.clipboardEnabled"
+        static let enabledSources = "perch.enabledSources"
+        static let replacesSystemHUD = "perch.replacesSystemHUD"
     }
+
+    /// Activity sources on for a fresh install: the ones that need no permission.
+    static let defaultEnabledSources: Set<String> = ["nowPlaying"]
 
     @ObservationIgnored private let defaults: UserDefaults
 
@@ -26,6 +31,14 @@ final class AppSettings {
     var clipboardEnabled: Bool {
         didSet { defaults.set(clipboardEnabled, forKey: Key.clipboardEnabled) }
     }
+    /// `ActivitySource.id`s the user turned on.
+    var enabledSources: Set<String> {
+        didSet { defaults.set(enabledSources.sorted(), forKey: Key.enabledSources) }
+    }
+    /// Hide Apple's volume/brightness bezel while Perch's HUD source runs.
+    var replacesSystemHUD: Bool {
+        didSet { defaults.set(replacesSystemHUD, forKey: Key.replacesSystemHUD) }
+    }
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -34,5 +47,7 @@ final class AppSettings {
         onboardingDone = defaults.bool(forKey: Key.onboardingDone)
         playsSounds = defaults.object(forKey: Key.playsSounds) as? Bool ?? true
         clipboardEnabled = defaults.object(forKey: Key.clipboardEnabled) as? Bool ?? true
+        enabledSources = (defaults.stringArray(forKey: Key.enabledSources)).map(Set.init) ?? Self.defaultEnabledSources
+        replacesSystemHUD = defaults.bool(forKey: Key.replacesSystemHUD)
     }
 }

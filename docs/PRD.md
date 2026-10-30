@@ -126,6 +126,7 @@ One shared slot in the idle pill used by every long-running thing.
 - Several activities stack; the most recent or most urgent shows first
 - States: running, needs attention, done, failed; done/failed auto-dismiss after 8 s
 - Built-in sources for v0.1: timers (`t 25m`), file conversions, agent sessions
+- Post-v0.1 sources (media, HUDs, battery, calendar, calls, privacy chips, notifications, downloads, weather, dictation): see [ACTIVITIES_PLAN.md](ACTIVITIES_PLAN.md)
 
 Acceptance: a 25-minute timer survives closing and reopening the panel; a finished activity plays a short animation and a sound (toggleable).
 

@@ -27,49 +27,96 @@ extension Activity.Status {
 }
 
 /// Idle pill content: the top activity in the ears beside the notch, or inline on the island.
+/// Music shows artwork and a waveform; HUD and battery flashes show an icon and a level bar.
+/// A transient flash slides in over whatever it covers and slides back out.
 struct IdleActivityContent: View {
     let model: NotchModel
 
     var body: some View {
         if let activity = model.activities.sorted.first {
-            switch model.geometry.style {
-            case .notch:
-                HStack(spacing: 0) {
-                    ActivityGlyph(activity: activity)
-                        .frame(maxWidth: .infinity)
-                    Color.clear.frame(width: model.geometry.notchSize.width)
-                    ActivityTrailing(activity: activity)
-                        .frame(maxWidth: .infinity)
-                }
-            case .island:
-                HStack(spacing: 8) {
-                    ActivityGlyph(activity: activity)
-                    Text(activity.title)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.8))
-                    Spacer(minLength: 0)
-                    ActivityTrailing(activity: activity, showsClock: true)
-                }
-                .padding(.horizontal, 10)
+            content(for: activity)
+                .id(activity.id)
+                .transition(.asymmetric(
+                    insertion: .move(edge: .top).combined(with: .opacity),
+                    removal: .opacity
+                ))
+        }
+    }
+
+    @ViewBuilder
+    private func content(for activity: Activity) -> some View {
+        switch model.geometry.style {
+        case .notch:
+            HStack(spacing: 0) {
+                leading(activity)
+                    .frame(maxWidth: .infinity)
+                Color.clear.frame(width: model.geometry.notchSize.width)
+                trailing(activity)
+                    .frame(maxWidth: .infinity)
             }
+        case .island:
+            HStack(spacing: 8) {
+                leading(activity)
+                Text(activity.title)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.8))
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                if case .level = activity.progress {
+                    Text(activity.detail)
+                        .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(.white)
+                }
+                trailing(activity, showsClock: true)
+            }
+            .padding(.horizontal, 10)
+        }
+    }
+
+    @ViewBuilder
+    private func leading(_ activity: Activity) -> some View {
+        if let media = activity.media {
+            ArtworkView(image: media.artwork, size: 18)
+        } else {
+            ActivityGlyph(activity: activity)
+        }
+    }
+
+    @ViewBuilder
+    private func trailing(_ activity: Activity, showsClock: Bool = false) -> some View {
+        switch activity.progress {
+        case let .waveform(playing):
+            Waveform(playing: playing, tint: activity.media?.tint.map(Color.init(nsColor:)) ?? .white, height: 12)
+        case let .level(level):
+            // The notch ear is 44 pt; the island has room for a longer bar.
+            LevelBar(level: level)
+                .frame(width: model.geometry.style == .island ? 64 : 26, height: 4)
+        default:
+            ActivityTrailing(activity: activity, showsClock: showsClock)
         }
     }
 }
 
-/// Hover card: up to three activities with their actions.
+/// Hover card: the music card when music leads, otherwise up to three activities with their actions.
 struct GlanceCard: View {
     let model: NotchModel
 
     var body: some View {
-        VStack(spacing: 0) {
-            ForEach(model.activities.sorted.prefix(NotchModel.glanceMaxRows)) { activity in
-                GlanceRow(activity: activity, center: model.activities)
-                    .frame(height: NotchModel.glanceRowHeight)
+        let items = model.activities.glanceItems
+        if let media = items.first?.media {
+            MusicCard(media: media)
+                .frame(maxHeight: .infinity, alignment: .bottom)
+        } else {
+            VStack(spacing: 0) {
+                ForEach(items.prefix(NotchModel.glanceMaxRows)) { activity in
+                    GlanceRow(activity: activity, center: model.activities)
+                        .frame(height: NotchModel.glanceRowHeight)
+                }
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .frame(maxHeight: .infinity, alignment: .bottom)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .frame(maxHeight: .infinity, alignment: .bottom)
     }
 }
 
@@ -91,21 +138,53 @@ struct GlanceRow: View {
 
     private var row: some View {
         HStack(spacing: 12) {
-            ActivityGlyph(activity: activity, size: 15)
-                .frame(width: 30, height: 30)
-                .background(Circle().fill(activity.status.tint.opacity(0.18)))
+            leading
             VStack(alignment: .leading, spacing: 2) {
                 Text(activity.title)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.white)
-                Text("\(activity.detail) · \(statusText)")
+                Text(subtitle)
                     .font(.system(size: 11))
                     .foregroundStyle(.white.opacity(0.6))
             }
             .lineLimit(1)
             Spacer(minLength: 8)
-            ActivityTrailing(activity: activity, showsClock: true)
+            if activity.batteries.count > 1 {
+                OtherBatteries(batteries: Array(activity.batteries.dropFirst()))
+            }
+            trailing
             actions
+        }
+    }
+
+    @ViewBuilder
+    private var leading: some View {
+        if let media = activity.media {
+            ArtworkView(image: media.artwork, size: 30)
+        } else {
+            ActivityGlyph(activity: activity, size: 15)
+                .frame(width: 30, height: 30)
+                .background(Circle().fill(activity.status.tint.opacity(0.18)))
+        }
+    }
+
+    @ViewBuilder
+    private var trailing: some View {
+        switch activity.progress {
+        case let .waveform(playing):
+            Waveform(playing: playing, height: 14)
+        case let .level(level):
+            LevelBar(level: level).frame(width: 40, height: 4)
+        default:
+            ActivityTrailing(activity: activity, showsClock: true)
+        }
+    }
+
+    /// Status only means something for work that finishes (timers, conversions, agents).
+    private var subtitle: String {
+        switch activity.kind {
+        case .timer, .conversion, .agent: "\(activity.detail) · \(statusText)"
+        case .nowPlaying, .hud, .deviceBattery: activity.detail
         }
     }
 
@@ -123,7 +202,7 @@ struct GlanceRow: View {
                     CircleButton(symbol: "pause.fill") { center.pause(activity.id) }
                 case .paused:
                     CircleButton(symbol: "play.fill") { center.resume(activity.id) }
-                case .indeterminate, .fraction:
+                case .indeterminate, .fraction, .level, .waveform:
                     EmptyView()
                 }
             }
@@ -137,8 +216,52 @@ struct GlanceRow: View {
                 CircleButton(symbol: "terminal") { TerminalFocuser.focus(terminal) }
                     .help("Focus terminal")
             }
-            CircleButton(symbol: "xmark") { center.dismiss(activity.id) }
+            if let media = activity.media {
+                let source = ActivitySources.shared.nowPlaying
+                CircleButton(symbol: media.isPlaying ? "pause.fill" : "play.fill") { source.togglePlayPause() }
+                    .help(media.isPlaying ? "Pause" : "Play")
+                CircleButton(symbol: "forward.fill") { source.nextTrack() }
+                    .help("Next track")
+            } else {
+                // Now playing ends with the player, not on request.
+                CircleButton(symbol: "xmark") { center.dismiss(activity.id) }
+            }
         }
+    }
+}
+
+/// Every other connected device as icon + charge, after the one that just connected.
+private struct OtherBatteries: View {
+    let batteries: [DeviceBattery]
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ForEach(batteries.prefix(3)) { device in
+                HStack(spacing: 3) {
+                    Image(systemName: device.symbol)
+                        .font(.system(size: 11))
+                    Text(device.level.map { "\(Int(($0 * 100).rounded()))%" } ?? "")
+                        .font(.system(size: 11, weight: .medium).monospacedDigit())
+                }
+                .foregroundStyle(.white.opacity(0.7))
+                .help("\(device.name): \(device.summary)")
+            }
+        }
+    }
+}
+
+/// Horizontal 0…1 bar for volume, brightness and battery.
+struct LevelBar: View {
+    let level: Double
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Capsule().fill(.white.opacity(0.22))
+                Capsule().fill(.white).frame(width: proxy.size.width * min(max(level, 0), 1))
+            }
+        }
+        .animation(.easeOut(duration: 0.12), value: level)
     }
 }
 
@@ -163,11 +286,24 @@ struct ActivityGlyph: View {
     var size: CGFloat = 12
 
     var body: some View {
-        Image(systemName: symbol)
-            .font(.system(size: size, weight: .semibold))
-            .foregroundStyle(activity.status.tint)
-            .symbolEffect(.pulse, isActive: activity.status == .needsAttention)
-            .contentTransition(.symbolEffect(.replace))
+        if activity.status == .running, let logo {
+            logo
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: size, height: size)
+                .foregroundStyle(activity.status.tint)
+        } else {
+            Image(systemName: symbol)
+                .font(.system(size: size, weight: .semibold))
+                .foregroundStyle(activity.status.tint)
+                .symbolEffect(.pulse, isActive: activity.status == .needsAttention)
+                .contentTransition(.symbolEffect(.replace))
+        }
+    }
+
+    private var logo: Image? {
+        guard case let .agent(source, _) = activity.kind else { return nil }
+        return source.logo
     }
 
     private var symbol: String {
@@ -223,8 +359,10 @@ struct ProgressRing: View {
             }
         case let .paused(remaining, total):
             ring(total > 0 ? 1 - remaining / total : 1)
-        case let .fraction(value):
+        case let .fraction(value), let .level(value):
             ring(value)
+        case let .waveform(playing):
+            Waveform(playing: playing, tint: tint, height: 12)
         case .indeterminate:
             ProgressView().controlSize(.mini)
         }

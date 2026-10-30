@@ -4,13 +4,13 @@ import Foundation
 
 struct TimerCommandTests {
     @Test func parsesCompoundDuration() {
-        #expect(TimerCommand.parse("t 1h30m") == 5400)
+        #expect(TimerCommand.parse("t 1h30m") == .single(5400))
     }
 
     @Test func bareNumberIsMinutes() {
-        #expect(TimerCommand.parse("t 25") == 1500)
-        #expect(TimerCommand.parse("t 25m") == 1500)
-        #expect(TimerCommand.parse("t 90s") == 90)
+        #expect(TimerCommand.parse("t 25") == .single(1500))
+        #expect(TimerCommand.parse("t 25m") == .single(1500))
+        #expect(TimerCommand.parse("t 90s") == .single(90))
     }
 
     @Test func zeroIsRejected() {
@@ -19,7 +19,17 @@ struct TimerCommandTests {
 
     @Test func overTwentyFourHoursIsRejected() {
         #expect(TimerCommand.parse("t 25h") == nil)
-        #expect(TimerCommand.parse("t 24h") == 86400)
+        #expect(TimerCommand.parse("t 24h") == .single(86400))
+    }
+
+    @Test func pomodoroIsFourFocusPhasesWithBreaks() {
+        let plan = TimerCommand.parse("t pomo")
+        #expect(plan == TimerCommand.parse("t Pomodoro"))
+        #expect(plan?.cycleCount == 4)
+        #expect(plan?.phases.count == 8)
+        #expect(plan?.phases.first == .init(kind: .focus, duration: 1500))
+        #expect(plan?.phases[1] == .init(kind: .rest, duration: 300))
+        #expect(plan?.cycle(at: 3) == 2) // second break belongs to cycle 2
     }
 
     @Test func malformedInputIsRejected() {

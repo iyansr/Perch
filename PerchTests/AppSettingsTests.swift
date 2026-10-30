@@ -16,6 +16,9 @@ struct AppSettingsTests {
         #expect(settings.onboardingDone == false)
         #expect(settings.playsSounds == true)
         #expect(settings.clipboardEnabled == true)
+        // Sources that need a permission start off; they prompt when first enabled.
+        #expect(settings.enabledSources == ["nowPlaying"])
+        #expect(settings.replacesSystemHUD == false)
     }
 
     @Test func persistsOnSet() {
@@ -24,10 +27,12 @@ struct AppSettingsTests {
         first.playsSounds = false
         first.onboardingDone = true
         first.hotkey = Shortcut(keyCode: 49, carbonModifiers: 0x100)
+        first.enabledSources = ["hud"]
 
         let second = AppSettings(defaults: defaults)
         #expect(second.playsSounds == false)
         #expect(second.onboardingDone == true)
         #expect(second.hotkey == Shortcut(keyCode: 49, carbonModifiers: 0x100))
+        #expect(second.enabledSources == ["hud"]) // turning nowPlaying off sticks
     }
 }

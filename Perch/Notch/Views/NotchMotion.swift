@@ -12,6 +12,10 @@ enum NotchMotion {
     /// Home module ↔ detail zoom: a spring so a second click mid-zoom redirects from where it is.
     /// Damping 0.9 keeps a hint of life without overshoot (a click carries no momentum).
     static let homePage = Animation.spring(response: 0.42, dampingFraction: 0.9)
+    /// A transient flash (volume, brightness, battery) sliding over the current activity, and back out.
+    /// Faster than `expand`: it answers a key press.
+    static let hudIn = Animation.timingCurve(0.32, 0.72, 0, 1, duration: 0.18)
+    static let hudOut = Animation.easeOut(duration: 0.18)
 
     /// `.island.open .inrow`: opacity .3s @ .16s, transform .45s @ .14s, blur .3s @ .16s.
     static let contentIn = Animation.timingCurve(0.32, 0.72, 0, 1, duration: 0.45).delay(0.15)

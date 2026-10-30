@@ -91,7 +91,7 @@ enum SearchResult: Identifiable, Equatable {
     case app(AppEntry, isRecent: Bool = false)
     /// Inline math or unit answer; ↵ copies `value`.
     case answer(expression: String, value: String)
-    case timer(TimeInterval)
+    case timer(TimerPlan)
     case web(String)
     /// ↵ opens, ⌘↵ reveals in Finder.
     case file(URL)
@@ -107,7 +107,7 @@ enum SearchResult: Identifiable, Equatable {
         switch self {
         case let .app(app, _): "app:\(app.url.path)"
         case let .answer(expression, _): "answer:\(expression)"
-        case let .timer(duration): "timer:\(duration)"
+        case let .timer(plan): "timer:\(plan.label)"
         case let .web(query): "web:\(query)"
         case let .file(url): "file:\(url.path)"
         case let .setting(pane): "setting:\(pane.identifier)"
@@ -121,7 +121,7 @@ enum SearchResult: Identifiable, Equatable {
         switch self {
         case let .app(app, _): app.name
         case let .answer(expression, value): "\(expression) = \(value)"
-        case let .timer(duration): "Start \(TimerCommand.label(for: duration)) timer"
+        case let .timer(plan): plan.isPomodoro ? "Start \(plan.label)" : "Start \(plan.label) timer"
         case let .web(query): "Search the web for “\(query)”"
         case let .file(url): url.lastPathComponent
         case let .setting(pane): pane.title
@@ -221,8 +221,8 @@ final class SearchEngine {
         }
 
         var results: [SearchResult] = []
-        if let duration = TimerCommand.parse(query) {
-            results.append(.timer(duration))
+        if let plan = TimerCommand.parse(query) {
+            results.append(.timer(plan))
         }
         if let converted = UnitConverter.convert(query) {
             let value = Calculator.format(converted.value, maxFractionDigits: 4)

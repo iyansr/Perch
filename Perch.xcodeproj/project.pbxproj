@@ -122,6 +122,7 @@
 				000000000000000120000000 /* Sources */,
 				000000000000000130000000 /* Frameworks */,
 				000000000000000140000000 /* Resources */,
+				000000000000000160000000 /* Build MediaRemote adapter */,
 				000000000000000150000000 /* Copy perch CLI */,
 			);
 			buildRules = (
@@ -240,6 +241,25 @@
 			);
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		000000000000000160000000 /* Build MediaRemote adapter */ = {
+			isa = PBXShellScriptBuildPhase;
+			inputFileListPaths = (
+				"$(SRCROOT)/Scripts/mediaremote-adapter-inputs.xcfilelist",
+			);
+			name = "Build MediaRemote adapter";
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/MediaRemoteAdapter/MediaRemoteAdapter.framework/Versions/A/MediaRemoteAdapter",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/MediaRemoteAdapter/mediaremote-adapter.pl",
+			);
+			shellPath = /bin/sh;
+			shellScript = (
+				"\"$SRCROOT/Scripts/build-mediaremote-adapter.sh\"",
+				"",
+			);
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		000000000000000120000000 /* Sources */ = {
@@ -415,11 +435,13 @@
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Perch;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Perch brings the terminal tab of an agent that needs you to the front.";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Perch brings the terminal tab of an agent that needs you to the front, and controls Music and Spotify when system now-playing is unavailable.";
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Perch shows the battery of AirPods, keyboards and mice when they connect.";
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 0.1;
@@ -446,11 +468,13 @@
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = Perch;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Perch brings the terminal tab of an agent that needs you to the front.";
+				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Perch brings the terminal tab of an agent that needs you to the front, and controls Music and Spotify when system now-playing is unavailable.";
+				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Perch shows the battery of AirPods, keyboards and mice when they connect.";
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 0.1;

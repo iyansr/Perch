@@ -4,6 +4,7 @@ import SwiftUI
 enum SettingsSection: CaseIterable, Identifiable {
     case general
     case clipboard
+    case activities
     case agents
     case permissions
     case about
@@ -14,6 +15,7 @@ enum SettingsSection: CaseIterable, Identifiable {
         switch self {
         case .general: "General"
         case .clipboard: "Clipboard"
+        case .activities: "Activities"
         case .agents: "Agents"
         case .permissions: "Permissions"
         case .about: "About"
@@ -25,6 +27,7 @@ enum SettingsSection: CaseIterable, Identifiable {
         switch self {
         case .general: "How you open Perch and how it sounds."
         case .clipboard: "Keep what you copy and paste it again later."
+        case .activities: "What else can show up beside the notch."
         case .agents: "See when Claude Code or Codex needs your input or finishes."
         case .permissions: "Access Perch needs to work with other apps."
         case .about: ""
@@ -35,6 +38,7 @@ enum SettingsSection: CaseIterable, Identifiable {
         switch self {
         case .general: "switch.2"
         case .clipboard: "doc.on.clipboard.fill"
+        case .activities: "waveform"
         case .agents: "sparkles"
         case .permissions: "lock.shield.fill"
         case .about: "info"
@@ -45,6 +49,7 @@ enum SettingsSection: CaseIterable, Identifiable {
         switch self {
         case .general: .gray
         case .clipboard: .orange
+        case .activities: .indigo
         case .agents: .purple
         case .permissions: .blue
         case .about: .pink
@@ -86,6 +91,7 @@ struct SettingsView: View {
         switch section {
         case .general: GeneralSettingsPage()
         case .clipboard: ClipboardSettingsPage()
+        case .activities: ActivitiesSettingsPage()
         case .agents: AgentsSettingsPage()
         case .permissions: PermissionsSettingsPage()
         case .about: AboutSettingsPage()

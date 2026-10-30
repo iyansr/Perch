@@ -1,0 +1,5 @@
+{"type":"data","diff":false,"payload":{"bundleIdentifier":"com.spotify.client","playing":true,"title":"Teardrop","artist":"Massive Attack","album":"Mezzanine","durationMicros":330000000,"elapsedTimeMicros":155000000,"timestampEpochMicros":1793350000000000,"playbackRate":1,"artworkMimeType":"image/png","artworkData":"iVBORw0KGgo="}}
+{"type":"data","diff":true,"payload":{"playing":false,"playbackRate":0,"elapsedTimeMicros":161500000,"timestampEpochMicros":1793350006500000}}
+{"type":"data","diff":true,"payload":{"artist":null,"artworkData":null,"artworkMimeType":null}}
+{"type":"data","diff":false,"payload":{"bundleIdentifier":"com.apple.WebKit.GPU","parentApplicationBundleIdentifier":"com.apple.Safari","playing":true,"title":"Lecture 4","durationMicros":0}}
+{"type":"data","diff":false,"payload":{}}

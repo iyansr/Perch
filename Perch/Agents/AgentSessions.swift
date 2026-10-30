@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 /// Maps agent events to one live activity per session.
 final class AgentSessions {
@@ -106,6 +107,17 @@ final class AgentSessions {
         case .claude: "sparkle"
         case .codex: "chevron.left.forwardslash.chevron.right"
         case .watch: "terminal"
+        }
+    }
+}
+
+extension AgentSource {
+    /// Brand mark asset (template-rendered); nil for sources without one.
+    var logo: Image? {
+        switch self {
+        case .claude: Image("ClaudeLogo")
+        case .codex: Image("OpenAILogo")
+        case .watch: nil
         }
     }
 }

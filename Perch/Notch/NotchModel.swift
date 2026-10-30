@@ -197,12 +197,12 @@ final class NotchModel {
                 size: CGSize(width: NotchGeometry.panelWidth, height: Self.searchRowHeight),
                 top: 8, topRadius: Self.searchRowHeight / 2, bottomRadius: Self.searchRowHeight / 2
             )
-        case (.notch, .glance) where activityCount > 0:
+        case (.notch, .glance) where hasGlance:
             return ShapeMetrics(
                 size: CGSize(width: 400, height: notch.height + glanceContentHeight),
                 top: 0, topRadius: 0, bottomRadius: 24, shoulder: Self.expandedShoulder
             )
-        case (.island, .glance) where activityCount > 0:
+        case (.island, .glance) where hasGlance:
             return ShapeMetrics(
                 size: CGSize(width: 400, height: glanceContentHeight),
                 top: 6, topRadius: 22, bottomRadius: 22
@@ -270,7 +270,18 @@ final class NotchModel {
         return rect.insetBy(dx: -4, dy: -4)
     }
 
+    /// Hovering expands only when there is something to show; HUD flashes alone do not count.
+    var hasGlance: Bool {
+        !activities.glanceItems.isEmpty
+    }
+
+    /// The music card when music leads the glance, otherwise one row per activity.
+    var glanceShowsMusicCard: Bool {
+        activities.glanceItems.first?.media != nil
+    }
+
     private var glanceContentHeight: CGFloat {
-        CGFloat(min(activities.items.count, Self.glanceMaxRows)) * Self.glanceRowHeight + 16
+        if glanceShowsMusicCard { return MusicCard.height }
+        return CGFloat(min(activities.glanceItems.count, Self.glanceMaxRows)) * Self.glanceRowHeight + 16
     }
 }

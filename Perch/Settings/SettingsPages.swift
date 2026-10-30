@@ -68,6 +68,99 @@ struct ClipboardSettingsPage: View {
     }
 }
 
+/// One row per activity source: toggle, permission state, and a way to fix a missing permission.
+struct ActivitiesSettingsPage: View {
+    @Bindable private var settings = AppSettings.shared
+    private let sources = ActivitySources.shared
+    /// Re-read every second: permissions change in System Settings, outside Perch.
+    @State private var permissions: [String: SourcePermission] = [:]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            SettingsPageHeader(section: .activities)
+            SettingsGroup(title: "Sources") {
+                ForEach(Array(sources.all.enumerated()), id: \.offset) { index, source in
+                    if index > 0 { SettingsDivider() }
+                    sourceRow(source)
+                    if source === sources.hud, sources.isEnabled(source) {
+                        SettingsDivider()
+                        SettingsRow(
+                            symbol: "rectangle.slash",
+                            tint: .secondary,
+                            title: "Replace system HUD",
+                            detail: "Hides Apple's volume and brightness overlay by pausing OSDUIHelper. macOS may bring it back after sleep or an update; it returns when Perch quits."
+                        ) {
+                            Toggle("Replace system HUD", isOn: $settings.replacesSystemHUD)
+                                .toggleStyle(.switch)
+                                .labelsHidden()
+                        }
+                    }
+                }
+            }
+            Label("Timers, conversions and coding agents always show; they are not sources.", systemImage: "info.circle")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .padding(.top, 10)
+                .padding(.leading, 4)
+        }
+        .task {
+            while !Task.isCancelled {
+                let current = Dictionary(uniqueKeysWithValues: sources.all.map { (type(of: $0).id, $0.permission) })
+                if current != permissions { permissions = current }
+                try? await Task.sleep(for: .seconds(1))
+            }
+        }
+    }
+
+    private func sourceRow(_ source: any ActivitySource) -> some View {
+        let info = type(of: source).info
+        let permission = permissions[type(of: source).id] ?? source.permission
+        return SettingsRow(symbol: info.symbol, tint: info.tint, title: info.title, detail: info.detail) {
+            HStack(spacing: 10) {
+                PermissionChip(permission: permission, isEnabled: sources.isEnabled(source))
+                Toggle(info.title, isOn: Binding(
+                    get: { settings.enabledSources.contains(type(of: source).id) },
+                    set: { sources.setEnabled(source, $0) }
+                ))
+                .toggleStyle(.switch)
+                .labelsHidden()
+            }
+        }
+    }
+}
+
+/// Permission state beside a source's toggle; a button when the user has something to do.
+private struct PermissionChip: View {
+    let permission: SourcePermission
+    let isEnabled: Bool
+
+    var body: some View {
+        switch permission {
+        case .none:
+            EmptyView()
+        case let .granted(kind):
+            chip("\(kind.title) granted", symbol: "checkmark.circle.fill", tint: .green)
+        case let .needed(kind):
+            if isEnabled, kind == .accessibility {
+                Button("Grant \(kind.title)…") { AccessibilityPermission.requestPrompt() }
+            } else {
+                chip("Needs \(kind.title)", symbol: "lock.fill", tint: .secondary)
+            }
+        case let .denied(kind):
+            Button("Open System Settings…") {
+                if let url = kind.settingsURL { NSWorkspace.shared.open(url) }
+            }
+            .help("\(kind.title) access is off for Perch.")
+        }
+    }
+
+    private func chip(_ text: String, symbol: String, tint: Color) -> some View {
+        Label(text, systemImage: symbol)
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(tint)
+    }
+}
+
 struct AgentsSettingsPage: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
