@@ -60,11 +60,10 @@ final class ZoomController {
         let pid = app.processIdentifier
         var done = false
         for attempt in 1...5 {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25 * Double(attempt)) { [weak self] in
-                MainActor.assumeIsolated {
-                    guard !done, let self else { return }
-                    done = self.pressLeaveConfirmation(pid: pid)
-                }
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(0.25 * Double(attempt)))
+                guard !done, let self else { return }
+                done = pressLeaveConfirmation(pid: pid)
             }
         }
     }

@@ -56,7 +56,8 @@ final class ClipboardPanelState {
         noticeToken += 1
         let token = noticeToken
         notice = text
-        DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(duration))
             guard let self, noticeToken == token else { return }
             notice = nil
         }

@@ -28,7 +28,6 @@ final class MeetController {
     /// Browsers Perch was refused automation for; not asked again this session, so no repeated prompts.
     private var denied: Set<String> = []
     private var polling = false
-    private let queue = DispatchQueue(label: "perch.call.meet", qos: .utility)
 
     var anyBrowserRunning: Bool {
         Self.browsers.contains { isRunning($0.bundleID) }
@@ -42,29 +41,36 @@ final class MeetController {
             return
         }
         polling = true
-        queue.async { [weak self] in
-            var result = Poll.none
-            var newlyDenied: [String] = []
-            for browser in browsers {
-                let output = Self.run(Self.script(bundleID: browser.bundleID, javascript: Self.stateJS))
-                if output.status != 0 {
-                    if CallLogic.isAutomationDenied(stderr: output.stderr) { newlyDenied.append(browser.bundleID) }
-                    if CallLogic.isJavaScriptDisabled(stderr: output.stderr) { result = .javaScriptDisabled }
-                    continue
-                }
-                if let tab = CallLogic.meetTab(report: output.stdout) {
-                    result = .call(url: tab.url, state: tab.state)
-                    break
-                }
+        Task { [weak self] in
+            let (result, newlyDenied) = await Self.scan(browsers)
+            guard let self else { return }
+            polling = false
+            denied.formUnion(newlyDenied)
+            completion(result)
+        }
+    }
+
+    @concurrent private static func scan(_ browsers: [Browser]) async -> (Poll, [String]) {
+        var result = Poll.none
+        var newlyDenied: [String] = []
+        for browser in browsers {
+            let output = run(script(bundleID: browser.bundleID, javascript: stateJS))
+            if output.status != 0 {
+                if CallLogic.isAutomationDenied(stderr: output.stderr) { newlyDenied.append(browser.bundleID) }
+                if CallLogic.isJavaScriptDisabled(stderr: output.stderr) { result = .javaScriptDisabled }
+                continue
             }
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated {
-                    guard let self else { return }
-                    self.polling = false
-                    self.denied.formUnion(newlyDenied)
-                    completion(result)
-                }
+            if let tab = CallLogic.meetTab(report: output.stdout) {
+                result = .call(url: tab.url, state: tab.state)
+                break
             }
+        }
+        return (result, newlyDenied)
+    }
+
+    @concurrent private static func press(_ browsers: [Browser], javascript: String) async {
+        for browser in browsers {
+            _ = run(script(bundleID: browser.bundleID, javascript: javascript))
         }
     }
 
@@ -77,11 +83,7 @@ final class MeetController {
         default: return
         }
         let browsers = Self.browsers.filter { isRunning($0.bundleID) && !denied.contains($0.bundleID) }
-        queue.async {
-            for browser in browsers {
-                _ = Self.run(Self.script(bundleID: browser.bundleID, javascript: javascript))
-            }
-        }
+        Task { await Self.press(browsers, javascript: javascript) }
     }
 
     /// Lets a user who fixed the permission or setting retry.

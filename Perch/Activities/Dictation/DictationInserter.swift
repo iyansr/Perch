@@ -23,7 +23,8 @@ enum DictationInserter {
         let saved = PasteboardSnapshot(pasteboard)
         let stamp = write(text, to: pasteboard)
         paster.postPaste(to: nil, direct: false, prepare: {}, completion: {
-            DispatchQueue.main.asyncAfter(deadline: .now() + restoreDelay) {
+            Task {
+                try? await Task.sleep(for: .seconds(restoreDelay))
                 // Someone copied in the meantime: their copy wins.
                 guard pasteboard.changeCount == stamp else { return }
                 saved.restore(to: pasteboard)

@@ -204,9 +204,7 @@ nonisolated final class NotificationFeed: @unchecked Sendable {
     private func tick() {
         guard let update = pollOnce(), !update.isEmpty else { return }
         let handlers = Array(subscribers.values)
-        DispatchQueue.main.async {
-            MainActor.assumeIsolated { handlers.forEach { $0(update) } }
-        }
+        DispatchQueue.main.async { handlers.forEach { $0(update) } }
     }
 
     /// One poll. Internal so tests can drive it without the timer; call it from one thread only.

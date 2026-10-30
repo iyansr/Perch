@@ -26,7 +26,6 @@ final class WeatherSource: ActivitySource {
 
     private let activityID = UUID()
     private let settings = AppSettings.shared
-    private let locator = LocationProvider()
     private let session: URLSession = {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 15
@@ -75,7 +74,6 @@ final class WeatherSource: ActivitySource {
         fetchTask = nil
         if let wakeObserver { NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver) }
         wakeObserver = nil
-        locator.cancel()
         geocoded = nil
         unresolvedCity = nil
         locationName = nil
@@ -186,7 +184,7 @@ final class WeatherSource: ActivitySource {
             geocoded = (city, place)
             return Target(name: place.name, latitude: place.latitude, longitude: place.longitude)
         }
-        let location = try await locator.currentLocation()
+        let location = try await LocationProvider.currentLocation()
         return Target(name: await placeName(for: location), latitude: location.coordinate.latitude,
                       longitude: location.coordinate.longitude)
     }
@@ -227,74 +225,36 @@ final class WeatherSource: ActivitySource {
     }
 }
 
-/// One-shot Mac location (city-level accuracy is enough), asking for authorization the first time.
-final class LocationProvider: NSObject, CLLocationManagerDelegate {
+/// One-shot Mac location: the first fix from Core Location's live updates. Starting the stream makes
+/// Core Location ask for authorization on the app's behalf the first time. Cancelling the awaiting task
+/// ends the stream and with it location services. No fix within `timeout` fails like a Core Location
+/// error, so the source backs off and retries instead of waiting forever.
+/// `CLLocationUpdate.liveUpdates` has no accuracy setting, so the old reduced-accuracy request is gone;
+/// weather only needs the city, so the extra precision is unused.
+enum LocationProvider {
     struct Unavailable: Error {}
 
-    private let manager = CLLocationManager()
-    private var waiters: [CheckedContinuation<CLLocation, Error>] = []
-    private var isRequesting = false
-
-    override init() {
-        super.init()
-        manager.delegate = self
-        manager.desiredAccuracy = kCLLocationAccuracyReduced
-    }
-
-    func currentLocation() async throws -> CLLocation {
-        try await withCheckedThrowingContinuation { continuation in
-            waiters.append(continuation)
-            begin()
-        }
-    }
-
-    /// Fails anything still waiting (the source stopped).
-    func cancel() {
-        isRequesting = false
-        finish(.failure(CancellationError()))
-    }
-
-    private func begin() {
-        switch manager.authorizationStatus {
-        case .notDetermined:
-            manager.requestWhenInUseAuthorization() // the delegate continues once the user answers
-        case .authorizedAlways, .authorizedWhenInUse:
-            guard !isRequesting else { return }
-            isRequesting = true
-            manager.requestLocation()
-        default:
-            finish(.failure(Unavailable()))
-        }
-    }
-
-    private func finish(_ result: Result<CLLocation, Error>) {
-        isRequesting = false
-        let pending = waiters
-        waiters = []
-        for waiter in pending { waiter.resume(with: result) }
-    }
-
-    nonisolated func locationManagerDidChangeAuthorization(_: CLLocationManager) {
-        MainActor.assumeIsolated {
-            guard !waiters.isEmpty, manager.authorizationStatus != .notDetermined else { return }
-            begin()
-        }
-    }
-
-    nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        MainActor.assumeIsolated {
-            guard let location = locations.last else { return }
-            finish(.success(location))
-        }
-    }
-
-    nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        MainActor.assumeIsolated {
-            if (error as? CLError)?.code == .denied {
-                finish(.failure(Unavailable()))
-            } else {
-                finish(.failure(error))
+    static func currentLocation(timeout: Duration = .seconds(30)) async throws -> CLLocation {
+        try await withThrowingTaskGroup(of: CLLocation.self) { group in
+            group.addTask { try await firstFix() }
+            group.addTask {
+                try await Task.sleep(for: timeout)
+                throw CLError(.locationUnknown)
             }
+            defer { group.cancelAll() }
+            guard let location = try await group.next() else { throw CLError(.locationUnknown) }
+            return location
         }
+    }
+
+    private static func firstFix() async throws -> CLLocation {
+        for try await update in CLLocationUpdate.liveUpdates() {
+            if update.authorizationDenied || update.authorizationDeniedGlobally || update.authorizationRestricted {
+                throw Unavailable()
+            }
+            if let location = update.location { return location }
+        }
+        try Task.checkCancellation()
+        throw CLError(.locationUnknown)
     }
 }

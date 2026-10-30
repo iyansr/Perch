@@ -1,5 +1,4 @@
 import AVFoundation
-import Speech
 import os
 
 /// Text handling for the dictation card and the final insertion.
@@ -89,7 +88,6 @@ nonisolated final class PeakMeter: Sendable {
 /// Why dictation cannot run, as the short line the failed card shows.
 nonisolated enum DictationError: Error, Equatable {
     case microphoneDenied
-    case speechDenied
     case noInput
     case noModel
     case unsupportedLocale
@@ -99,7 +97,6 @@ nonisolated enum DictationError: Error, Equatable {
     var message: String {
         switch self {
         case .microphoneDenied: "Microphone access is off"
-        case .speechDenied: "Speech Recognition access is off"
         case .noInput: "No microphone found"
         case .noModel: "Speech model unavailable"
         case .unsupportedLocale: "Language not supported"
@@ -108,15 +105,8 @@ nonisolated enum DictationError: Error, Equatable {
         }
     }
 
-    /// The first missing permission, or nil when dictation may start. Speech Recognition only matters to the
-    /// `SFSpeechRecognizer` engine; the macOS 26 analyzer needs none.
-    static func permissionProblem(
-        microphone: AVAuthorizationStatus,
-        speech: SFSpeechRecognizerAuthorizationStatus,
-        needsSpeech: Bool
-    ) -> DictationError? {
-        if microphone != .authorized { return .microphoneDenied }
-        if needsSpeech, speech != .authorized { return .speechDenied }
-        return nil
+    /// The missing permission, or nil when dictation may start. `SpeechAnalyzer` needs no permission of its own.
+    static func permissionProblem(microphone: AVAuthorizationStatus) -> DictationError? {
+        microphone == .authorized ? nil : .microphoneDenied
     }
 }

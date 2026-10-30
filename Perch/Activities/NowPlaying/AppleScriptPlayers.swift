@@ -103,7 +103,7 @@ final class AppleScriptPlayers {
         }
         queue.async { [weak self] in
             let snapshot = Self.run(player.query).flatMap { Self.parse($0, bundleID: player.bundleID) }
-            DispatchQueue.main.async { MainActor.assumeIsolated { self?.update(player.bundleID, snapshot) } }
+            DispatchQueue.main.async { self?.update(player.bundleID, snapshot) }
         }
     }
 

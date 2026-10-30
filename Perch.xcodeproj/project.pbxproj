@@ -448,7 +448,6 @@
 				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "Perch shows the progress of files downloading into your Downloads folder.";
 				INFOPLIST_KEY_NSLocationUsageDescription = "Perch shows the weather for where you are when no city is set.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Perch listens while you dictate and types what you say into the app you are using.";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Perch turns your dictation into text on this Mac.";
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 0.1;
@@ -489,7 +488,6 @@
 				INFOPLIST_KEY_NSDownloadsFolderUsageDescription = "Perch shows the progress of files downloading into your Downloads folder.";
 				INFOPLIST_KEY_NSLocationUsageDescription = "Perch shows the weather for where you are when no city is set.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Perch listens while you dictate and types what you say into the app you are using.";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Perch turns your dictation into text on this Mac.";
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 0.1;

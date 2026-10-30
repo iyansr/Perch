@@ -332,17 +332,13 @@ final class AirDropSource: ActivitySource {
 
     private func loadAvatar(for sender: String, activityID: UUID) {
         guard CNContactStore.authorizationStatus(for: .contacts) == .authorized else { return }
-        DispatchQueue.global(qos: .utility).async {
-            guard let avatar = Self.avatar(for: sender) else { return }
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated { [weak self] in
-                    self?.center?.update(activityID) { $0.badgeImage = avatar }
-                }
-            }
+        Task { [weak self] in
+            guard let avatar = await Self.avatar(for: sender) else { return }
+            self?.center?.update(activityID) { $0.badgeImage = avatar }
         }
     }
 
-    private nonisolated static func avatar(for sender: String) -> NSImage? {
+    @concurrent private static func avatar(for sender: String) async -> NSImage? {
         let store = CNContactStore()
         let keys: [CNKeyDescriptor] = [
             CNContactFormatter.descriptorForRequiredKeys(for: .fullName),
@@ -365,14 +361,14 @@ final class AirDropSource: ActivitySource {
         guard let entry = pending[transferID] else { return }
         let choice: AirDropBanner.Choice = accepted ? .accept : .decline
         let hints = [entry.request.sender, entry.request.file]
-        DispatchQueue.global(qos: .userInitiated).async {
-            let outcome = AirDropBanner.press(choice, hints: hints)
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated { [weak self] in
-                    self?.finishAnswer(transferID: transferID, accepted: accepted, outcome: outcome)
-                }
-            }
+        Task { [weak self] in
+            let outcome = await Self.press(choice, hints: hints)
+            self?.finishAnswer(transferID: transferID, accepted: accepted, outcome: outcome)
         }
+    }
+
+    @concurrent private static func press(_ choice: AirDropBanner.Choice, hints: [String]) async -> AirDropBanner.Outcome {
+        AirDropBanner.press(choice, hints: hints)
     }
 
     private func finishAnswer(transferID: String, accepted: Bool, outcome: AirDropBanner.Outcome) {

@@ -214,18 +214,14 @@ final class NotificationSource: ActivitySource {
         guard !text.isEmpty, let id = noteID(of: activity), let target = targets[id] else { return }
         let arguments = MessagesNotification.replyArguments(text: text, target: target)
         let activityID = activity.id
-        DispatchQueue.global(qos: .userInitiated).async {
-            let result = Self.runOSAScript(MessagesNotification.replyScript, arguments: arguments)
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated { [weak self] in
-                    guard let center = self?.center else { return }
-                    switch result {
-                    case .success:
-                        center.dismiss(activityID)
-                    case .failure(let error):
-                        center.update(activityID) { $0.detail = MessagesNotification.failureMessage(stderr: error.stderr) }
-                    }
-                }
+        Task { [weak self] in
+            let result = await Self.runOSAScript(MessagesNotification.replyScript, arguments: arguments)
+            guard let center = self?.center else { return }
+            switch result {
+            case .success:
+                center.dismiss(activityID)
+            case .failure(let error):
+                center.update(activityID) { $0.detail = MessagesNotification.failureMessage(stderr: error.stderr) }
             }
         }
     }
@@ -233,7 +229,7 @@ final class NotificationSource: ActivitySource {
     private struct ScriptError: Error { let stderr: String }
 
     /// `osascript` rather than `NSAppleScript`, which must stay on the main thread; `arguments` reach the script's `argv`.
-    private nonisolated static func runOSAScript(_ script: String, arguments: [String]) -> Result<String, ScriptError> {
+    @concurrent private static func runOSAScript(_ script: String, arguments: [String]) async -> Result<String, ScriptError> {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
         process.arguments = ["-e", script] + arguments

@@ -7,9 +7,6 @@ typealias DictationAudioSink = @Sendable (AVAudioPCMBuffer) -> Void
 
 /// A speech recogniser fed live audio. Everything but the sink runs on the main actor.
 protocol DictationEngine: AnyObject {
-    /// Whether the engine needs the Speech Recognition permission (only `SFSpeechRecognizer` does).
-    var needsSpeechPermission: Bool { get }
-
     /// Loads the model (downloading it first when missing) and starts the recogniser.
     /// - Parameters:
     ///   - inputFormat: format of the buffers the returned sink will receive.
@@ -32,12 +29,12 @@ protocol DictationEngine: AnyObject {
 }
 
 enum DictationEngines {
-    /// On-device `SpeechAnalyzer` when it supports the user's language, else `SFSpeechRecognizer`.
-    static func make(locale: Locale = .current) async -> DictationEngine {
-        if let supported = await SpeechAnalyzerEngine.supportedLocale(for: locale) {
-            return SpeechAnalyzerEngine(locale: supported)
+    /// An on-device `SpeechAnalyzer` engine for the user's language; throws `unsupportedLocale` when no transcriber has it.
+    static func make(locale: Locale = .current) async throws -> DictationEngine {
+        guard let module = await SpeechAnalyzerEngine.supportedModule(for: locale) else {
+            throw DictationError.unsupportedLocale
         }
-        return SFSpeechEngine(locale: locale)
+        return SpeechAnalyzerEngine(module: module)
     }
 }
 
@@ -125,26 +122,42 @@ nonisolated private final class AnalyzerFeed: @unchecked Sendable {
     func finish() { continuation.finish() }
 }
 
-/// On-device `SpeechTranscriber`. Results arrive as volatile guesses that a final result then replaces;
-/// finals after the first start with a space, so they concatenate as they are.
+/// On-device `SpeechTranscriber`, or `DictationTranscriber` for languages it lacks; both run on `SpeechAnalyzer`.
+/// Results arrive as volatile guesses that a final result then replaces; finals after the first start with a
+/// space, so they concatenate as they are.
 final class SpeechAnalyzerEngine: DictationEngine {
-    let needsSpeechPermission = false
+    /// The transcriber module that supports the user's language, with the locale it supports.
+    enum Module {
+        case speech(Locale)
+        case dictation(Locale)
 
-    private let locale: Locale
+        var locale: Locale {
+            switch self {
+            case let .speech(locale), let .dictation(locale): locale
+            }
+        }
+    }
+
+    private let module: Module
     private var analyzer: SpeechAnalyzer?
     private var feed: AnalyzerFeed?
     private var resultsTask: Task<Void, Never>?
     private var committed = ""
     private var volatile = ""
 
-    init(locale: Locale) {
-        self.locale = locale
+    init(module: Module) {
+        self.module = module
     }
 
-    /// The locale the transcriber supports for the user's language, or nil when it has none.
-    static func supportedLocale(for locale: Locale) async -> Locale? {
-        guard SpeechTranscriber.isAvailable else { return nil }
-        return await SpeechTranscriber.supportedLocale(equivalentTo: locale)
+    /// `SpeechTranscriber` when it supports the user's language, else `DictationTranscriber`; nil when neither does.
+    static func supportedModule(for locale: Locale) async -> Module? {
+        if SpeechTranscriber.isAvailable, let supported = await SpeechTranscriber.supportedLocale(equivalentTo: locale) {
+            return .speech(supported)
+        }
+        if let supported = await DictationTranscriber.supportedLocale(equivalentTo: locale) {
+            return .dictation(supported)
+        }
+        return nil
     }
 
     func begin(
@@ -153,7 +166,18 @@ final class SpeechAnalyzerEngine: DictationEngine {
         onFailure: @escaping (DictationError) -> Void,
         status: @escaping (String) -> Void
     ) async throws -> DictationAudioSink {
-        let transcriber = SpeechTranscriber(locale: locale, preset: .progressiveTranscription)
+        let transcriber: any SpeechModule
+        let collect: () -> Task<Void, Never>
+        switch module {
+        case let .speech(locale):
+            let speech = SpeechTranscriber(locale: locale, preset: .progressiveTranscription)
+            transcriber = speech
+            collect = { self.collect(speech.results, text: { String($0.text.characters) }, onText: onText, onFailure: onFailure) }
+        case let .dictation(locale):
+            let dictation = DictationTranscriber(locale: locale, preset: .progressiveLongDictation)
+            transcriber = dictation
+            collect = { self.collect(dictation.results, text: { String($0.text.characters) }, onText: onText, onFailure: onFailure) }
+        }
         try await ensureModel(for: transcriber, status: status)
 
         guard let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber], considering: inputFormat) else {
@@ -167,22 +191,7 @@ final class SpeechAnalyzerEngine: DictationEngine {
         self.analyzer = analyzer
         self.feed = feed
 
-        resultsTask = Task {
-            do {
-                for try await result in transcriber.results {
-                    let text = String(result.text.characters)
-                    if result.isFinal {
-                        committed += text
-                        volatile = ""
-                    } else {
-                        volatile = text
-                    }
-                    onText(committed + volatile)
-                }
-            } catch {
-                if !Task.isCancelled { onFailure(Self.map(error)) }
-            }
-        }
+        resultsTask = collect()
         do {
             try await analyzer.start(inputSequence: stream)
         } catch {
@@ -214,13 +223,41 @@ final class SpeechAnalyzerEngine: DictationEngine {
         analyzer = nil
     }
 
+    /// Folds a transcriber's results into `committed` and `volatile` and reports the whole transcript after each.
+    private func collect<Results: AsyncSequence & Sendable>(
+        _ results: Results,
+        text: @escaping (Results.Element) -> String,
+        onText: @escaping (String) -> Void,
+        onFailure: @escaping (DictationError) -> Void
+    ) -> Task<Void, Never> where Results.Element: SpeechModuleResult, Results.Failure == any Error {
+        Task {
+            do {
+                for try await result in results {
+                    let words = text(result)
+                    if result.isFinal {
+                        committed += words
+                        volatile = ""
+                    } else {
+                        volatile = words
+                    }
+                    onText(committed + volatile)
+                }
+            } catch {
+                if !Task.isCancelled { onFailure(Self.map(error)) }
+            }
+        }
+    }
+
     /// Downloads the language model when it is not on this Mac yet.
-    private func ensureModel(for transcriber: SpeechTranscriber, status: (String) -> Void) async throws {
+    private func ensureModel(for transcriber: any SpeechModule, status: (String) -> Void) async throws {
         let inventory = await AssetInventory.status(forModules: [transcriber])
         if inventory == .unsupported { throw DictationError.unsupportedLocale }
-        let installedLocales = await SpeechTranscriber.installedLocales
+        let installedLocales = switch module {
+        case .speech: await SpeechTranscriber.installedLocales
+        case .dictation: await DictationTranscriber.installedLocales
+        }
         let isInstalled = inventory == .installed
-            || installedLocales.contains { $0.identifier(.bcp47) == locale.identifier(.bcp47) }
+            || installedLocales.contains { $0.identifier(.bcp47) == module.locale.identifier(.bcp47) }
         guard !isInstalled else { return }
         status("Downloading speech model…")
         do {
@@ -239,107 +276,6 @@ final class SpeechAnalyzerEngine: DictationEngine {
             if speech.code == .cannotAllocateUnsupportedLocale { return .unsupportedLocale }
         }
         return .engine("Speech recognition failed")
-    }
-}
-
-// MARK: - Languages SpeechAnalyzer lacks: SFSpeechRecognizer
-
-private nonisolated final class RequestSink: @unchecked Sendable {
-    let request: SFSpeechAudioBufferRecognitionRequest
-
-    init(_ request: SFSpeechAudioBufferRecognitionRequest) {
-        self.request = request
-    }
-}
-
-/// `SFSpeechRecognizer`, on-device when the language supports it.
-final class SFSpeechEngine: DictationEngine {
-    let needsSpeechPermission = true
-
-    private let locale: Locale
-    private var request: SFSpeechAudioBufferRecognitionRequest?
-    private var task: SFSpeechRecognitionTask?
-    private var latest = ""
-    private var isFinal = false
-    private var waiter: CheckedContinuation<Void, Never>?
-
-    init(locale: Locale) {
-        self.locale = locale
-    }
-
-    func begin(
-        inputFormat: AVAudioFormat,
-        onText: @escaping (String) -> Void,
-        onFailure: @escaping (DictationError) -> Void,
-        status: @escaping (String) -> Void
-    ) async throws -> DictationAudioSink {
-        guard let recognizer = SFSpeechRecognizer(locale: locale) else { throw DictationError.unsupportedLocale }
-        guard recognizer.isAvailable else { throw DictationError.noModel }
-        let request = SFSpeechAudioBufferRecognitionRequest()
-        request.shouldReportPartialResults = true
-        if recognizer.supportsOnDeviceRecognition { request.requiresOnDeviceRecognition = true }
-        self.request = request
-
-        task = Self.startTask(recognizer, request) { [weak self] text, final, failed in
-            guard let self else { return }
-            if let text {
-                latest = text
-                isFinal = final
-                onText(text)
-            }
-            if final || failed != nil { resume() }
-            // An error after the last words (cancelled, no speech) is normal; only a silent failure is reported.
-            if let failed, text == nil, latest.isEmpty, !final { onFailure(.engine(failed)) }
-        }
-        let sink = RequestSink(request)
-        return { buffer in sink.request.append(buffer) }
-    }
-
-    func finish() async -> String {
-        request?.endAudio()
-        if task != nil, !isFinal {
-            // The recogniser's last result or the deadline, whichever comes first, resumes the waiter.
-            let deadline = Task { [weak self] in
-                try? await Task.sleep(for: .seconds(3))
-                self?.resume()
-            }
-            await withCheckedContinuation { waiter = $0 }
-            deadline.cancel()
-        }
-        task?.cancel()
-        task = nil
-        request = nil
-        return latest
-    }
-
-    func cancel() async {
-        request?.endAudio()
-        task?.cancel()
-        task = nil
-        request = nil
-        resume()
-    }
-
-    private func resume() {
-        let pending = waiter
-        waiter = nil
-        pending?.resume()
-    }
-
-    /// Created outside the main actor so the recogniser's callback queue never hits a main-actor check.
-    private nonisolated static func startTask(
-        _ recognizer: SFSpeechRecognizer,
-        _ request: SFSpeechAudioBufferRecognitionRequest,
-        deliver: @escaping @MainActor (String?, Bool, String?) -> Void
-    ) -> SFSpeechRecognitionTask {
-        recognizer.recognitionTask(with: request) { result, error in
-            let text = result?.bestTranscription.formattedString
-            let final = result?.isFinal ?? false
-            let failed = error?.localizedDescription
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated { deliver(text, final, failed) }
-            }
-        }
     }
 }
 

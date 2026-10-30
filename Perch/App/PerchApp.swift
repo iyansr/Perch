@@ -40,10 +40,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         sessions.startPruning()
         let bridge = AgentBridge(
             onRequestEnded: { request in
-                DispatchQueue.main.async { MainActor.assumeIsolated { sessions.requestEnded(request) } }
+                DispatchQueue.main.async { sessions.requestEnded(request) }
             },
             onEvent: { event in
-                DispatchQueue.main.async { MainActor.assumeIsolated { sessions.handle(event) } }
+                DispatchQueue.main.async { sessions.handle(event) }
             }
         )
         // Allow / Deny on a permission card: sessions flip the row, the bridge answers the waiting `perch event --await`.

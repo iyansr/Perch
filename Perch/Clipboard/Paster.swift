@@ -127,7 +127,8 @@ final class Paster {
     private func fire(prepare: () -> Void, completion: @escaping () -> Void) {
         prepare()
         // One tick for the target's window to become key after the panel lets go.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.04) {
+        Task {
+            try? await Task.sleep(for: .milliseconds(40))
             Self.postCommandV(toPID: nil)
             completion()
         }
@@ -171,7 +172,8 @@ final class Paster {
                 guard app?.processIdentifier == self?.pid else { return }
                 MainActor.assumeIsolated { self?.finish() }
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { [weak self] in
+            Task { [weak self] in
+                try? await Task.sleep(for: .seconds(timeout))
                 self?.finish()
             }
         }

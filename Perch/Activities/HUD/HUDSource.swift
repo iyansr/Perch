@@ -142,7 +142,8 @@ final class HUDSource: ActivitySource {
                   detail: on ? "On" : "Off", duration: Self.capsLockDuration)
             return
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { [weak self] in
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(0.06))
             guard let self, isRunning else { return }
             switch key {
             case .brightness:

@@ -106,7 +106,8 @@ final class DropZoneController: FileDropTarget {
         stopReleasePoll()
         // A drop on the panel arrives just after the global mouse-up; give it time before
         // treating the release as "dropped elsewhere".
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(0.25))
             guard let self, model.state == .dropZone, model.drop?.phase == .targeting else { return }
             finish(restoreFocus: false)
         }

@@ -16,7 +16,7 @@ final class NotchController {
     let converter: ImageConverter
     let dropZone: DropZoneController
     /// Pending collapse of a lingering music card.
-    private var glanceCollapse: DispatchWorkItem?
+    private var glanceCollapse: Task<Void, Never>?
 
     init(activities: ActivityCenter, search: SearchEngine) {
         model = NotchModel(geometry: screens.geometry, activities: activities, search: search)
@@ -224,13 +224,13 @@ final class NotchController {
 
     /// First launch: the pill pulses hello, then the card drops from the notch.
     private func beginFirstRun() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(0.8))
             guard let self, !AppSettings.shared.onboardingDone else { return }
             model.pulse()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { [weak self] in
-                guard let self, !AppSettings.shared.onboardingDone else { return }
-                showOnboarding()
-            }
+            try? await Task.sleep(for: .seconds(0.7))
+            guard !AppSettings.shared.onboardingDone else { return }
+            showOnboarding()
         }
     }
 
@@ -264,7 +264,8 @@ final class NotchController {
         if panel.isKeyWindow { returnKeyboardFocus() }
         updateHover()
         // 2 s on screen after the 0.6 s collapse morph.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) { [weak self] in
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2.6))
             guard let self, model.hint == hint else { return }
             withAnimation(NotchMotion.collapse) { self.model.hint = nil }
         }
@@ -280,7 +281,8 @@ final class NotchController {
         }
         // Fallback if the panel is still key once the morph is done, e.g. the previous
         // app was already frontmost (a drop from Finder), so activating it changed nothing.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) { [weak self] in
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(0.65))
             guard let self, model.state == .idle || model.state == .glance else { return }
             panel.releaseKey()
         }
@@ -452,7 +454,8 @@ final class NotchController {
     /// Short message in the collapsed pill; 2 s on screen after the 0.6 s collapse morph.
     private func flashHint(_ text: String) {
         withAnimation(NotchMotion.collapse) { model.hint = text }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) { [weak self] in
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2.6))
             guard let self, model.hint == text else { return }
             withAnimation(NotchMotion.collapse) { self.model.hint = nil }
         }
@@ -621,13 +624,12 @@ final class NotchController {
                 return
             }
             guard glanceCollapse == nil else { return }
-            let work = DispatchWorkItem { [weak self] in
+            glanceCollapse = Task { [weak self] in
+                do { try await Task.sleep(for: .seconds(Self.musicCardLinger)) } catch { return }
                 guard let self else { return }
                 glanceCollapse = nil
                 if !isMouseInside { collapseGlance() }
             }
-            glanceCollapse = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + Self.musicCardLinger, execute: work)
         }
     }
 

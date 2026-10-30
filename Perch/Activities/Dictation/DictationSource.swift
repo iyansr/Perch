@@ -1,12 +1,11 @@
 import AVFoundation
 import AppKit
 import Observation
-import Speech
 import SwiftUI
 
 /// Hotkey dictation. The hotkey (or the card's Stop) toggles it: while it listens, a persistent activity
 /// shows the live transcript and microphone level; stopping types the text into the front app.
-/// Needs Microphone; the `SFSpeechRecognizer` engine (languages `SpeechAnalyzer` lacks) also needs Speech Recognition.
+/// Needs only the Microphone permission; recognition runs on-device through `SpeechAnalyzer`.
 final class DictationSource: ActivitySource {
     static let id = "dictation"
     static let info = ActivitySourceInfo(
@@ -102,30 +101,18 @@ final class DictationSource: ActivitySource {
 
     // MARK: Permissions
 
-    /// Both prompts on first use of the source, so the first hotkey press does not stall on a dialog.
+    /// The prompt on first use of the source, so the first hotkey press does not stall on a dialog.
     private func requestPermissions() {
         if AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined {
             AVCaptureDevice.requestAccess(for: .audio) { @Sendable _ in }
         }
-        if SFSpeechRecognizer.authorizationStatus() == .notDetermined {
-            SFSpeechRecognizer.requestAuthorization { @Sendable _ in }
-        }
     }
 
-    private func ensurePermissions(needsSpeech: Bool) async throws {
+    private func ensureMicrophonePermission() async throws {
         if AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined {
             _ = await AVCaptureDevice.requestAccess(for: .audio)
         }
-        if needsSpeech, SFSpeechRecognizer.authorizationStatus() == .notDetermined {
-            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-                SFSpeechRecognizer.requestAuthorization { @Sendable _ in continuation.resume() }
-            }
-        }
-        if let problem = DictationError.permissionProblem(
-            microphone: AVCaptureDevice.authorizationStatus(for: .audio),
-            speech: SFSpeechRecognizer.authorizationStatus(),
-            needsSpeech: needsSpeech
-        ) {
+        if let problem = DictationError.permissionProblem(microphone: AVCaptureDevice.authorizationStatus(for: .audio)) {
             throw problem
         }
     }
@@ -156,12 +143,12 @@ final class DictationSource: ActivitySource {
     }
 
     private func prepare(session: Int) async {
-        let engine = await DictationEngines.make()
-        guard session == generation else { return }
-        self.engine = engine
         let capture = MicrophoneCapture()
         do {
-            try await ensurePermissions(needsSpeech: engine.needsSpeechPermission)
+            let engine = try await DictationEngines.make()
+            guard session == generation else { return }
+            self.engine = engine
+            try await ensureMicrophonePermission()
             guard session == generation else { return }
             let format = try capture.inputFormat()
             let sink = try await engine.begin(

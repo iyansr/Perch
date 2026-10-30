@@ -139,11 +139,10 @@ final class CallSource: ActivitySource {
         case .meet: meet.perform(actionID)
         }
         // Show the new mute / camera state without waiting for the next tick.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-            MainActor.assumeIsolated {
-                self?.tick = 1
-                self?.poll()
-            }
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(0.4))
+            self?.tick = 1
+            self?.poll()
         }
     }
 }

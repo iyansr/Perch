@@ -75,11 +75,10 @@ final class MeetingSource: ActivitySource {
         case .fullAccess:
             begin()
         case .notDetermined:
-            store.requestFullAccessToEvents { [weak self] granted, _ in
-                DispatchQueue.main.async {
-                    guard let self, granted, self.isRunning else { return }
-                    self.begin()
-                }
+            let store = store
+            Task { [weak self] in
+                guard let granted = try? await store.requestFullAccessToEvents(), granted, let self, isRunning else { return }
+                begin()
             }
         default:
             break // denied or write-only: Settings shows the fix

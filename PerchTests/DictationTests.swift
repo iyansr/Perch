@@ -122,20 +122,15 @@ struct DictationLevelTests {
 }
 
 struct DictationPermissionTests {
-    @Test func microphoneIsAlwaysRequired() {
-        #expect(DictationError.permissionProblem(microphone: .denied, speech: .authorized, needsSpeech: false) == .microphoneDenied)
-        #expect(DictationError.permissionProblem(microphone: .notDetermined, speech: .authorized, needsSpeech: true) == .microphoneDenied)
-        #expect(DictationError.permissionProblem(microphone: .restricted, speech: .authorized, needsSpeech: false) == .microphoneDenied)
-    }
-
-    @Test func speechOnlyMattersForTheLegacyEngine() {
-        #expect(DictationError.permissionProblem(microphone: .authorized, speech: .denied, needsSpeech: false) == nil)
-        #expect(DictationError.permissionProblem(microphone: .authorized, speech: .denied, needsSpeech: true) == .speechDenied)
-        #expect(DictationError.permissionProblem(microphone: .authorized, speech: .authorized, needsSpeech: true) == nil)
+    @Test func microphoneIsTheOnlyPermission() {
+        #expect(DictationError.permissionProblem(microphone: .denied) == .microphoneDenied)
+        #expect(DictationError.permissionProblem(microphone: .notDetermined) == .microphoneDenied)
+        #expect(DictationError.permissionProblem(microphone: .restricted) == .microphoneDenied)
+        #expect(DictationError.permissionProblem(microphone: .authorized) == nil)
     }
 
     @Test func failureLinesAreShort() {
-        let all: [DictationError] = [.microphoneDenied, .speechDenied, .noInput, .noModel, .unsupportedLocale, .interrupted]
+        let all: [DictationError] = [.microphoneDenied, .noInput, .noModel, .unsupportedLocale, .interrupted]
         for error in all { #expect(error.message.count <= 40) }
         #expect(DictationError.engine("Custom").message == "Custom")
     }

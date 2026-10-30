@@ -80,7 +80,8 @@ final class BluetoothBatterySource: NSObject, ActivitySource, CBCentralManagerDe
         connected[address] = device
         disconnectNotifications[address] = device.register(forDisconnectNotification: self, selector: #selector(deviceDisconnected(_:device:)))
         guard Date().timeIntervalSince(startedAt) > Self.startupGrace else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.readDelay) { [weak self] in
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Self.readDelay))
             self?.announce(address)
         }
     }
