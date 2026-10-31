@@ -1,0 +1,52 @@
+name: Bug report
+description: Report a problem with Perch
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: checkboxes
+    id: existing-search
+    attributes:
+      label: Existing issues
+      options:
+        - label: I searched existing issues for this problem.
+          required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open ...
+        2. Select ...
+        3. See ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include screenshots or a recording if useful. Remove private data first.
+    validations:
+      required: true
+  - type: input
+    id: perch-version
+    attributes:
+      label: Perch version
+    validations:
+      required: true
+  - type: input
+    id: macos-version
+    attributes:
+      label: macOS version
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Include display setup or relevant logs if applicable. Remove private data first.

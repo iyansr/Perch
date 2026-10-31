@@ -1,0 +1,35 @@
+name: Feature request
+description: Suggest an improvement to Perch
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: checkboxes
+    id: existing-search
+    attributes:
+      label: Existing issues
+      options:
+        - label: I searched existing issues for this idea.
+          required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Describe your proposed solution
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and additional context
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      description: Please discuss substantial changes with maintainers before starting work.
+      options:
+        - label: I would be interested in contributing this change.
