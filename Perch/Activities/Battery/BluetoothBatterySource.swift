@@ -74,7 +74,25 @@ final class BluetoothBatterySource: NSObject, ActivitySource, CBCentralManagerDe
         connectNotification = IOBluetoothDevice.register(forConnectNotifications: self, selector: #selector(deviceConnected(_:device:)))
     }
 
-    @objc private func deviceConnected(_ notification: IOBluetoothUserNotification, device: IOBluetoothDevice) {
+    /// IOBluetooth posts these on its own coordinator queue, not the main thread. Main-actor isolated
+    /// handlers would trap in Swift's runtime isolation check, so the callbacks are nonisolated and hop.
+    @objc private nonisolated func deviceConnected(_ notification: IOBluetoothUserNotification, device: IOBluetoothDevice) {
+        // Handed to the main queue and not touched again on this queue.
+        nonisolated(unsafe) let device = device
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated { self?.handleConnect(device) }
+        }
+    }
+
+    @objc private nonisolated func deviceDisconnected(_ notification: IOBluetoothUserNotification, device: IOBluetoothDevice) {
+        nonisolated(unsafe) let notification = notification
+        nonisolated(unsafe) let device = device
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated { self?.handleDisconnect(notification, device: device) }
+        }
+    }
+
+    private func handleConnect(_ device: IOBluetoothDevice) {
         guard let rawAddress = device.addressString else { return }
         let address = DeviceBattery.normalize(address: rawAddress)
         connected[address] = device
@@ -86,7 +104,7 @@ final class BluetoothBatterySource: NSObject, ActivitySource, CBCentralManagerDe
         }
     }
 
-    @objc private func deviceDisconnected(_ notification: IOBluetoothUserNotification, device: IOBluetoothDevice) {
+    private func handleDisconnect(_ notification: IOBluetoothUserNotification, device: IOBluetoothDevice) {
         guard let rawAddress = device.addressString else { return }
         let address = DeviceBattery.normalize(address: rawAddress)
         notification.unregister()
