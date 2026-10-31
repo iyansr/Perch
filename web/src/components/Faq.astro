@@ -9,7 +9,11 @@ const faqs = [
 	},
 	{
 		q: 'Which Macs does it run on?',
-		a: `Any Mac on ${SITE.minimumOS}.`,
+		a: `Any Mac on ${SITE.minimumOS}, Apple silicon or Intel. Perch is built on macOS 26 APIs, so it doesn’t run on macOS 15 Sequoia or earlier.`,
+	},
+	{
+		q: 'Why does macOS say “Perch” Not Opened?',
+		a: 'Perch is signed with its own certificate, not an Apple Developer ID, so Apple hasn’t notarized it and Gatekeeper blocks the downloaded copy. Install with Homebrew and it clears that for you on every install and upgrade. If you used the DMG, run xattr -dr com.apple.quarantine /Applications/Perch.app once after each release, then open Perch again.',
 	},
 	{
 		q: 'Why isn’t it on the Mac App Store?',

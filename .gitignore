@@ -23,3 +23,5 @@ DerivedData/
 *.dmg
 dist/
 node_modules/
+
+videos

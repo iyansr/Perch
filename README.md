@@ -43,11 +43,18 @@ brew install --cask iyansr/perch/perch
 
 Homebrew clears the quarantine flag on every install and upgrade, and `brew upgrade` picks up new releases.
 
-Or download `Perch-<version>.dmg` from [Releases](https://github.com/iyansr/Perch/releases) and drag Perch to Applications. Perch is self-signed, not notarized, and has no updater. After installing each release, clear the quarantine flag so macOS opens it:
+Or download `Perch-<version>.dmg` from [Releases](https://github.com/iyansr/Perch/releases) and drag Perch to Applications. Perch has no updater, so repeat this for each release.
+
+### “Perch” Not Opened
+
+Perch is signed with its own certificate, not an Apple Developer ID, so Apple has not notarized it. macOS quarantines anything a browser downloads, and Gatekeeper refuses to open a quarantined app that isn't notarized: it shows **“Perch” Not Opened — Apple could not verify “Perch” is free of malware**. Click **Done**, then clear the flag and open Perch again:
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/Perch.app
+open /Applications/Perch.app
 ```
+
+Homebrew installs never show this, because the cask clears the flag for you. Do it again after installing each new DMG. Other self-signed apps, such as [Tinycast](https://github.com/abue-ammar/tinycast), work the same way.
 
 ## Building from source
 
