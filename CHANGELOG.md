@@ -1,5 +1,11 @@
 # perch
 
+## 0.1.4
+
+### Patch Changes
+
+- [`258d814`](https://github.com/iyansr/Perch/commit/258d81421c4d13943db1614c8c14ad72d4fd954a) Thanks [@iyansr](https://github.com/iyansr)! - Add native updates. Perch checks for new stable releases once a day (on by default, with an off switch) and under Settings → Check for Updates. It downloads, installs and relaunches only after you approve. Releases now ship a signed `Perch-<version>.zip` alongside the DMG. The first release with the updater must be installed manually.
+
 ## 0.1.3
 
 ### Patch Changes
