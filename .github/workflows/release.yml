@@ -19,6 +19,10 @@ on:
         description: "Version, e.g. 0.1.0 or 0.2.0-beta.1 (tagged v<version>)"
         type: string
         required: true
+      cask_only:
+        description: "Only push the Homebrew cask for an already published stable release (retry after a tap failure)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -41,6 +45,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           INPUT_VERSION: ${{ inputs.version }}
+          CASK_ONLY: ${{ inputs.cask_only == true }}
         run: |
           # A tag push has no inputs; its ref name is the tag.
           VERSION="${INPUT_VERSION:-${GITHUB_REF_NAME#v}}"
@@ -49,9 +54,18 @@ jobs:
             exit 1
           fi
           TAG="v$VERSION"
+          PUBLISHED="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease --jq 'if .isDraft then "draft" elif .isPrerelease then "prerelease" else "stable" end' 2>/dev/null || true)"
+          if [ "$CASK_ONLY" = "true" ]; then
+            # Retry only the tap push, from the DMG the published release already serves.
+            if [ "$PUBLISHED" != "stable" ]; then
+              echo "::error::cask_only needs a published stable release $TAG (found: ${PUBLISHED:-none})"
+              exit 1
+            fi
+            mkdir -p dist
+            gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "Perch-$VERSION.dmg" --dir dist
           # Only a published release blocks; a draft left by a failed run is replaced when publishing.
-          if [ "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null)" = "false" ]; then
-            echo "::error::Release $TAG already exists"
+          elif [ -n "$PUBLISHED" ] && [ "$PUBLISHED" != "draft" ]; then
+            echo "::error::Release $TAG already exists. To retry only the Homebrew cask, run this workflow with cask_only."
             exit 1
           fi
           PRERELEASE=false
@@ -62,10 +76,12 @@ jobs:
             echo "DMG=dist/Perch-$VERSION.dmg"
             echo "ZIP=dist/Perch-$VERSION.zip"
             echo "PRERELEASE=$PRERELEASE"
+            echo "CASK_ONLY=$CASK_ONLY"
           } >> "$GITHUB_ENV"
           echo "Releasing $TAG (pre-release: $PRERELEASE)"
 
       - name: Select Xcode 27
+        if: env.CASK_ONLY != 'true'
         run: |
           # Real folders only: an image's Xcode_27.N.app symlink can point at a release candidate.
           XCODE_PATH="$(find -E /Applications -maxdepth 1 -type d -regex '.*/Xcode_27(\.[0-9]+)*\.app' | sort -V | tail -n1)"
@@ -79,6 +95,7 @@ jobs:
       # The SAME certificate on every release is what keeps users' privacy grants across updates.
       # Scripts/verify-signature.sh fails the run if a different one is imported.
       - name: Import signing identity
+        if: env.CASK_ONLY != 'true'
         env:
           P12_BASE64: ${{ secrets.SIGNING_P12_BASE64 }}
           P12_PASSWORD: ${{ secrets.SIGNING_P12_PASSWORD }}
@@ -103,6 +120,7 @@ jobs:
           security find-identity -p codesigning "$KEYCHAIN"
 
       - name: Resolve build number
+        if: env.CASK_ONLY != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -131,9 +149,11 @@ jobs:
           echo "Build number $BUILD"
 
       - name: Build, verify and package
+        if: env.CASK_ONLY != 'true'
         run: ./Scripts/build-release.sh "$VERSION" "$BUILD_NUMBER"
 
       - uses: actions/upload-artifact@v7
+        if: env.CASK_ONLY != 'true'
         with:
           name: Perch-${{ env.VERSION }}
           path: |
@@ -142,6 +162,7 @@ jobs:
           if-no-files-found: error
 
       - name: Compose release notes
+        if: env.CASK_ONLY != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -185,6 +206,7 @@ jobs:
       # Draft first, publish after every asset is attached: the updater and the website alias never
       # see a release with missing files.
       - name: Publish GitHub Release
+        if: env.CASK_ONLY != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

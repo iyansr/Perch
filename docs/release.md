@@ -72,6 +72,12 @@ the release's version and SHA-256 filled in, and the workflow pushes that to the
    ```
 
 Without this secret the workflow still publishes the GitHub Release and warns that it skipped the cask.
+If the cask push fails after the release is published (for example, a token without write access to the
+tap), fix the secret and push only the cask:
+
+```sh
+gh workflow run release.yml -f version=0.1.4 -f cask_only=true
+```
 
 The cask clears the quarantine flag in `postflight_steps`, so Homebrew users never run `xattr`. It is
 marked `auto_updates true`: a plain `brew upgrade` (no cask named) normally skips Perch, since the app updates itself. `brew upgrade perch`
@@ -128,8 +134,8 @@ Versions live in the root `package.json`, which exists only for Changesets; Perc
    `CHANGELOG.md` section.
 
 A tag pushed with `GITHUB_TOKEN` starts no workflow, so the Changesets workflow calls the Release
-workflow directly instead of tagging. Re-running a failed run retries the release, because it only
-skips a version that already has a GitHub Release.
+workflow directly instead of tagging. Re-running a failed run retries the release while it is still a
+draft; once a version is published, the run stops at its first step, so use `cask_only` for the cask.
 
 For a pre-release, enter Changesets pre mode (`pnpm changeset pre enter beta`), merge version pull
 requests as usual (they produce `0.2.0-beta.0`, `0.2.0-beta.1`, …), then `pnpm changeset pre exit`.
