@@ -12,6 +12,8 @@ private final class ShortcutRecording {
 /// Rejects a shortcut another Perch shortcut or another app already uses. `slot` is where the shortcut is
 /// registered, so re-recording the same shortcut is not a conflict with itself.
 struct ShortcutRecorderView: View {
+    static var isRecordingShortcut: Bool { ShortcutRecording.shared.active != nil }
+
     let slot: HotkeySlot
     @Binding var shortcut: Shortcut?
     /// Shows × to remove the shortcut; the open/close shortcut must always have one.

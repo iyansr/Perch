@@ -49,7 +49,8 @@ jobs:
             exit 1
           fi
           TAG="v$VERSION"
-          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+          # Only a published release blocks; a draft left by a failed run is replaced when publishing.
+          if [ "$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null)" = "false" ]; then
             echo "::error::Release $TAG already exists"
             exit 1
           fi
@@ -59,6 +60,7 @@ jobs:
             echo "VERSION=$VERSION"
             echo "TAG=$TAG"
             echo "DMG=dist/Perch-$VERSION.dmg"
+            echo "ZIP=dist/Perch-$VERSION.zip"
             echo "PRERELEASE=$PRERELEASE"
           } >> "$GITHUB_ENV"
           echo "Releasing $TAG (pre-release: $PRERELEASE)"
@@ -100,13 +102,43 @@ jobs:
           security list-keychains -d user | xargs security list-keychains -d user -s "$KEYCHAIN"
           security find-identity -p codesigning "$KEYCHAIN"
 
+      - name: Resolve build number
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Build numbers must increase even across release branches and repeated releases of one commit.
+          BUILD="$(git rev-list --count HEAD)"
+          LATEST_TAG="$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName // empty')"
+          if [ -n "$LATEST_TAG" ]; then
+            PREV_NAME="Perch-${LATEST_TAG#v}.zip"
+            HAS_ZIP="$(gh release view "$LATEST_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq ".assets[] | select(.name == \"$PREV_NAME\") | .name")"
+            if [ -n "$HAS_ZIP" ]; then
+              mkdir -p "$RUNNER_TEMP/latest"
+              gh release download "$LATEST_TAG" --repo "$GITHUB_REPOSITORY" --pattern "$PREV_NAME" --dir "$RUNNER_TEMP/latest"
+              unzip -p "$RUNNER_TEMP/latest/$PREV_NAME" 'Perch.app/Contents/Info.plist' > "$RUNNER_TEMP/prev.plist"
+              PREV="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$RUNNER_TEMP/prev.plist")"
+              if ! [[ "$PREV" =~ ^[0-9]{1,18}$ ]]; then
+                echo "::error::Latest stable ZIP has an invalid build number"
+                exit 1
+              fi
+              if [ "$PREV" -ge "$BUILD" ]; then BUILD=$((10#$PREV + 1)); fi
+              echo "Latest stable build is $PREV"
+            else
+              echo "Latest stable predates ZIP updates; using the commit count."
+            fi
+          fi
+          echo "BUILD_NUMBER=$BUILD" >> "$GITHUB_ENV"
+          echo "Build number $BUILD"
+
       - name: Build, verify and package
-        run: ./Scripts/build-release.sh "$VERSION" "$(git rev-list --count HEAD)"
+        run: ./Scripts/build-release.sh "$VERSION" "$BUILD_NUMBER"
 
       - uses: actions/upload-artifact@v7
         with:
           name: Perch-${{ env.VERSION }}
-          path: ${{ env.DMG }}
+          path: |
+            ${{ env.DMG }}
+            ${{ env.ZIP }}
           if-no-files-found: error
 
       - name: Compose release notes
@@ -123,6 +155,7 @@ jobs:
               -f tag_name="$TAG" -f target_commitish="$GITHUB_SHA" --jq .body > "$RUNNER_TEMP/notes.md"
           fi
           SHA256="$(shasum -a 256 "$DMG" | awk '{print $1}')"
+          ZIP_SHA256="$(shasum -a 256 "$ZIP" | awk '{print $1}')"
           cat >> "$RUNNER_TEMP/notes.md" <<EOF
 
           ## Install
@@ -142,28 +175,44 @@ jobs:
 
           Requires macOS 26 or later. Universal: Apple silicon and Intel.
 
-          SHA-256 \`$SHA256\`
+          Perch checks for stable updates daily and asks before it downloads, installs and relaunches. \`Perch-$VERSION.zip\` is the updater's payload; it is not for manual install.
+
+          SHA-256 \`Perch-$VERSION.dmg\`: \`$SHA256\`
+
+          SHA-256 \`Perch-$VERSION.zip\`: \`$ZIP_SHA256\`
           EOF
 
+      # Draft first, publish after every asset is attached: the updater and the website alias never
+      # see a release with missing files.
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # A failed earlier run may have left a draft for this tag; it would block a retry.
+          gh release list --repo "$GITHUB_REPOSITORY" --json tagName,isDraft \
+            --jq ".[] | select(.isDraft and .tagName == \"$TAG\") | .tagName" | while read -r stale; do
+            gh release delete "$stale" --repo "$GITHUB_REPOSITORY" --yes
+          done
           FLAGS=()
-          ASSETS=("$DMG")
+          LATEST=()
+          ASSETS=("$DMG" "$ZIP")
           if [ "$PRERELEASE" = "true" ]; then
             FLAGS+=(--prerelease)
           else
             # Unversioned copy: the website links releases/latest/download/Perch.dmg, which skips pre-releases.
             cp "$DMG" dist/Perch.dmg
             ASSETS+=(dist/Perch.dmg)
+            LATEST=(--latest)
           fi
           gh release create "$TAG" "${ASSETS[@]}" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "Perch $VERSION" \
             --notes-file "$RUNNER_TEMP/notes.md" \
+            --draft \
             "${FLAGS[@]}"
+          # make_latest is ignored while a release is a draft, so mark it when publishing.
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false "${LATEST[@]}"
 
       # Pre-releases stay off Homebrew: `brew upgrade` would hand them to everyone.
       - name: Update Homebrew cask

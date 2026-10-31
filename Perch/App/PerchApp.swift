@@ -26,13 +26,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
             startAgentBridge(activities: activities)
             ActivitySources.shared.start(center: activities)
+            UpdateController.shared.start(
+                canPresent: { [weak self] in
+                    guard let self, let model = self.controller?.model else { return false }
+                    return model.state == .idle && !model.isReplying
+                        && NSApp.keyWindow == nil && self.updateBlockReason(activities: activities) == nil
+                },
+                installationBlockReason: { [weak self] in
+                    self?.updateBlockReason(activities: activities)
+                }
+            )
         }
         AgentConnections.shared.refresh()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        UpdateController.shared.stop()
         agentBridge?.stop()
         ActivitySources.shared.stopAll() // resumes Apple's HUD if Perch hid it
+    }
+
+    private func updateBlockReason(activities: ActivityCenter) -> String? {
+        if agentBridge?.hasPendingRequests == true {
+            return "Answer the pending agent permission request before restarting Perch."
+        }
+        if ShortcutRecorderView.isRecordingShortcut {
+            return "Finish recording your shortcut before restarting Perch."
+        }
+        if NSApp.modalWindow != nil || controller?.model.isReplying == true {
+            return "Finish the open dialog or reply before restarting Perch."
+        }
+        if let state = controller?.model.state, state != .idle && state != .glance {
+            return "Close the notch panel before restarting Perch."
+        }
+        for activity in activities.items where activity.status == .running || activity.status == .needsAttention {
+            switch activity.kind {
+            case .conversion:
+                return "Wait for image conversion to finish before restarting Perch."
+            case .dictation:
+                return "Finish dictation before restarting Perch."
+            case .timer:
+                return "Finish or cancel your timer before restarting Perch."
+            default:
+                break
+            }
+        }
+        return nil
     }
 
     private func startAgentBridge(activities: ActivityCenter) {

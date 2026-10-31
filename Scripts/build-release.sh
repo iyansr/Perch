@@ -1,5 +1,6 @@
 #!/bin/bash
-# Builds, verifies and packages a signed universal Perch.app into dist/Perch-<version>.dmg.
+# Builds, verifies and packages a signed universal Perch.app into dist/Perch-<version>.dmg (first install)
+# and dist/Perch-<version>.zip (the in-app updater's payload).
 # Usage: build-release.sh <version> [build-number]. The release workflow runs this too; see docs/release.md.
 set -euo pipefail
 
@@ -10,6 +11,7 @@ IDENTITY="Perch Self-Signed"
 DERIVED="${DERIVED_DATA_PATH:-build/ReleaseDerivedData}"
 APP="$DERIVED/Build/Products/Release/Perch.app"
 DMG="dist/Perch-${VERSION}.dmg"
+ZIP="dist/Perch-${VERSION}.zip"
 
 # Capture first: `grep -q` exits early, and under pipefail the SIGPIPE to `security` fails the test.
 identities="$(security find-identity -p codesigning)"
@@ -52,5 +54,23 @@ if ! OUTPUT="$(diskutil image create from "$STAGE" --format UDZO --volumeName Pe
   exit 1
 fi
 
+echo "▸ Packaging $ZIP"
+rm -f "$ZIP"
+# ditto, not zip: --keepParent stores Perch.app/ at the archive root and keeps symlinks, xattrs and the seal.
+# --sequesterRsrc puts AppleDouble data in a top-level __MACOSX folder, so non-ditto extractors cannot write ._ files inside the bundle.
+ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
+
+# Round trip: the updater extracts this archive, so the extracted copy must pass the same checks.
+echo "▸ Verifying extracted $ZIP"
+EXTRACTED="$STAGE/extracted"
+mkdir -p "$EXTRACTED"
+ditto -x -k "$ZIP" "$EXTRACTED"
+if [ "$(ls -A "$EXTRACTED")" != "Perch.app" ]; then
+  echo "✗ $ZIP must contain exactly Perch.app at its root" >&2
+  exit 1
+fi
+Scripts/verify-signature.sh "$EXTRACTED/Perch.app"
+
 echo "✓ $DMG"
-shasum -a 256 "$DMG"
+echo "✓ $ZIP"
+shasum -a 256 "$DMG" "$ZIP"

@@ -67,6 +67,32 @@ struct GeneralSettingsPage: View {
                         .labelsHidden()
                 }
             }
+            SettingsGroup(title: "Updates") {
+                SettingsRow(
+                    symbol: "arrow.triangle.2.circlepath",
+                    title: "Automatically check for updates",
+                    detail: UpdateController.isSupported
+                        ? "Check daily. You choose when to download, install and restart."
+                        : "Updates are available in the installed release, not development builds."
+                ) {
+                    Toggle("Automatically check for updates", isOn: $settings.automaticallyChecksForUpdates)
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                        .labelsHidden()
+                        .disabled(!UpdateController.isSupported)
+                }
+                SettingsDivider()
+                SettingsRow(
+                    symbol: "info.circle",
+                    title: "Perch \(UpdateController.installedVersion)",
+                    detail: "Stable releases only. Your settings and history stay unchanged."
+                ) {
+                    Button(UpdateController.shared.isWorking ? "View Update…" : "Check for Updates…") {
+                        UpdateController.shared.checkForUpdates()
+                    }
+                    .disabled(!UpdateController.isSupported)
+                }
+            }
         }
         .task {
             while !Task.isCancelled {

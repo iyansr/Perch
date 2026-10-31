@@ -14,6 +14,10 @@ cask "perch" do
     strategy :github_latest
   end
 
+  # Perch updates itself after the user approves; this makes a plain `brew upgrade` normally skip it.
+  # Naming the cask or passing --greedy still upgrades it. See docs/release.md.
+  auto_updates true
+
   depends_on macos: :tahoe
 
   app "Perch.app"

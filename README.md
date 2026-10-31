@@ -41,9 +41,15 @@ brew trust --tap iyansr/perch
 brew install --cask iyansr/perch/perch
 ```
 
-Homebrew clears the quarantine flag on every install and upgrade, and `brew upgrade` picks up new releases.
+Homebrew clears the quarantine flag on every install and upgrade. The cask is marked `auto_updates`, so a plain `brew upgrade` (no cask named) normally skips Perch because the app updates itself; naming it (`brew upgrade perch`), `--greedy` or `--greedy-auto-updates` still upgrades it.
 
-Or download `Perch-<version>.dmg` from [Releases](https://github.com/iyansr/Perch/releases) and drag Perch to Applications. Perch has no updater, so repeat this for each release.
+Or download `Perch-<version>.dmg` from [Releases](https://github.com/iyansr/Perch/releases) and drag Perch to Applications.
+
+### Updates
+
+Perch checks GitHub for a new stable release once a day. This is on by default; turn it off in Settings, or run **Check for Updates** there at any time. Perch never installs on its own: it shows the release and, only when you approve, downloads the update, installs it over the same app path and relaunches. It never restarts without your approval. Pre-releases are not offered, and development builds never check.
+
+Every release is signed with the same certificate, so macOS keeps the privacy permissions you granted. The first release that includes the updater must be installed manually (Homebrew or DMG); updates apply from then on. The quarantine step below is unchanged for first installs. Perch does not promise to bypass Gatekeeper.
 
 ### “Perch” Not Opened
 
@@ -54,7 +60,7 @@ xattr -dr com.apple.quarantine /Applications/Perch.app
 open /Applications/Perch.app
 ```
 
-Homebrew installs never show this, because the cask clears the flag for you. Do it again after installing each new DMG. Other self-signed apps, such as [Tinycast](https://github.com/abue-ammar/tinycast), work the same way.
+Homebrew installs never show this, because the cask clears the flag for you. Do it again after manually installing a DMG. Other self-signed apps, such as [Tinycast](https://github.com/abue-ammar/tinycast), work the same way.
 
 ## Building from source
 
@@ -70,7 +76,7 @@ Run the `Perch` scheme. The Xcode build phase runs `Scripts/build-mediaremote-ad
 
 Debug builds sign with your own Apple Development team. Release builds sign with a self-signed `Perch Self-Signed` identity; create it once with `./Scripts/create-signing-identity.sh`. See [docs/signing.md](docs/signing.md).
 
-Add a changeset with each user-facing change (`pnpm changeset`). Merging the version pull request that Changesets opens, or pushing a `v<version>` tag, releases Perch through the `Release` workflow; `./Scripts/build-release.sh <version>` builds the same DMG locally. See [docs/release.md](docs/release.md).
+Add a changeset with each user-facing change (`pnpm changeset`). Merging the version pull request that Changesets opens, or pushing a `v<version>` tag, releases Perch through the `Release` workflow; `./Scripts/build-release.sh <version>` builds the same DMG and updater ZIP locally. See [docs/release.md](docs/release.md).
 
 The marketing site lives in `web/` (Astro, pnpm):
 

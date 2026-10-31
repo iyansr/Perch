@@ -2,7 +2,8 @@
 
 Every release is built by the `Release` workflow (`.github/workflows/release.yml`). It builds a
 universal `Perch.app`, signs it with the `Perch Self-Signed` identity, checks the signature, packages
-`Perch-<version>.dmg`, and publishes it as GitHub Release `v<version>`. Three things start it: a merged
+`Perch-<version>.dmg` (first install) and `Perch-<version>.zip` (the in-app updater's payload), and
+publishes both as GitHub Release `v<version>`. Three things start it: a merged
 Changesets version pull request, a pushed `v<version>` tag, or a manual run.
 
 ## One-time setup
@@ -72,8 +73,10 @@ the release's version and SHA-256 filled in, and the workflow pushes that to the
 
 Without this secret the workflow still publishes the GitHub Release and warns that it skipped the cask.
 
-The cask clears the quarantine flag in `postflight_steps`, so Homebrew users never run `xattr`. It quits
-Perch before an upgrade or uninstall replaces the bundle, and `brew uninstall --zap` also removes
+The cask clears the quarantine flag in `postflight_steps`, so Homebrew users never run `xattr`. It is
+marked `auto_updates true`: a plain `brew upgrade` (no cask named) normally skips Perch, since the app updates itself. `brew upgrade perch`
+or `brew upgrade --cask perch`, `--greedy`, `--greedy-auto-updates` and `HOMEBREW_UPGRADE_GREEDY=1` still upgrade it (the cask's version is bumped on every stable release). The
+cask quits Perch before an upgrade or uninstall replaces the bundle, and `brew uninstall --zap` also removes
 Perch's Application Support folder and preferences. Users install with:
 
 ```sh
@@ -152,15 +155,19 @@ gh workflow run release.yml -f version=0.2.0
    `v<version>` release already exists. A version with a suffix, such as `0.2.0-beta.1`, is a
    pre-release.
 2. Imports the `.p12` into a temporary keychain, deleted when the job ends.
-3. Runs `Scripts/build-release.sh <version> <commit count>`. `MARKETING_VERSION` is the version and
-   `CURRENT_PROJECT_VERSION` is the number of commits on the released commit, so later releases always
-   get a higher build number, whichever way they were started.
-4. Uploads the DMG as a workflow artifact, then creates the GitHub Release (and its tag, unless a
-   tag push started the run) on the commit being built. The notes are the changelog, install steps and
-   the DMG's SHA-256. A stable release also gets an unversioned `Perch.dmg`, which the website's
-   Download button links to through `releases/latest/download/Perch.dmg`.
+3. Resolves the build number: the commit count, raised above the build of the latest published stable
+   release's ZIP if that is not lower. `MARKETING_VERSION` is the version and `CURRENT_PROJECT_VERSION`
+   is that number. Runs `Scripts/build-release.sh <version> <build number>`, which also writes
+   `dist/Perch-<version>.zip` with `ditto` (keeping the signature), extracts it again and runs
+   `Scripts/verify-signature.sh` on the extracted app.
+4. Uploads the DMG and ZIP as a workflow artifact, then creates a **draft** GitHub Release with every
+   asset on the commit being built, and publishes the draft (creating the tag, unless a tag push
+   started the run) only once all assets are attached. The notes are the changelog, install steps and
+   the SHA-256 of both files. A stable release also gets an unversioned `Perch.dmg`, which the website's
+   Download button links to through `releases/latest/download/Perch.dmg`, and is marked latest.
+   Pre-releases are marked as such, so the in-app updater (stable only, via `releases/latest`) ignores them.
 5. For a stable release, bumps the cask in the tap. Pre-releases never reach Homebrew, because
-   `brew upgrade` would install them for everyone.
+   `brew upgrade --greedy` would install them for everyone.
 
 ## Build a release locally
 
@@ -170,15 +177,18 @@ With the identity in your login keychain:
 ./Scripts/build-release.sh 0.1.0
 ```
 
-It writes `dist/Perch-0.1.0.dmg`. `Scripts/verify-signature.sh <Perch.app>` checks that the app, the
+It writes `dist/Perch-0.1.0.dmg` and `dist/Perch-0.1.0.zip`. `Scripts/verify-signature.sh <Perch.app>` checks that the app, the
 `perch` CLI and the MediaRemote adapter are universal, use the hardened runtime and are signed by
 `Perch Self-Signed`; that the seal verifies; that the designated requirement pins the certificate;
 that there is no `get-task-allow`; and that every usage string has its entitlement.
 
 ## Installing a release
 
-The DMG is self-signed, not notarized, and Perch has no updater. After dragging each release to
-Applications, users clear the quarantine flag:
+The DMG is self-signed, not notarized. Perch checks daily for stable releases (default on, with an off
+switch in Settings, plus Settings › Check for Updates) and downloads, installs and relaunches only after
+the user approves. Development builds and tests never check. The first release with the updater needs a
+manual install; later updates keep the same certificate, so privacy grants survive. After manually
+installing a DMG, users clear the quarantine flag (the updater does not change this first-install step):
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/Perch.app

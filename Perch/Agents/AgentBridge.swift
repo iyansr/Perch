@@ -58,6 +58,11 @@ nonisolated final class AgentBridge: @unchecked Sendable {
         }
     }
 
+    /// A relaunch must not strand a hook waiting for an Allow / Deny answer.
+    var hasPendingRequests: Bool {
+        queue.sync { !requests.isEmpty }
+    }
+
     /// Answers the client waiting on `request` and closes its connection. Does nothing when that client is
     /// already gone (the caller learns that through `onRequestEnded`).
     func reply(request: String, allow: Bool) {
