@@ -1,0 +1,79 @@
+name: Changesets
+
+# Pending changesets on main → open or update the "Version Packages" pull request.
+# Merging that pull request bumps package.json → release that version.
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: changesets
+  cancel-in-progress: false
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      release: ${{ steps.bump.outputs.release }}
+      version: ${{ steps.bump.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The version bump check compares package.json with the commit before this push.
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # No publish-script: with changesets pending it opens the PR; without, it does nothing.
+      - name: Open or update the version pull request
+        id: changesets
+        uses: changesets/action@v2
+        with:
+          commit-message: "chore: version Perch"
+          pr-title: "chore: version Perch"
+
+      # Release only when this push changed the version, i.e. the version pull request was merged,
+      # and that version has no release yet, so re-running a failed run retries the release.
+      - name: Detect a version bump
+        id: bump
+        if: steps.changesets.outputs.has-changesets == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          VERSION="$(node -p 'require("./package.json").version')"
+          PREVIOUS=""
+          if git cat-file -e "$BEFORE:package.json" 2>/dev/null; then
+            PREVIOUS="$(git show "$BEFORE:package.json" | node -p 'JSON.parse(require("fs").readFileSync(0)).version')"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          # No previous version (first push, or the push adding package.json) is not a bump.
+          if [ -z "$PREVIOUS" ] || [ "$VERSION" = "$PREVIOUS" ]; then
+            echo "Version unchanged at $VERSION."
+          elif gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "v$VERSION is already released."
+          else
+            echo "Version $PREVIOUS → $VERSION; releasing."
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  # A tag pushed with GITHUB_TOKEN starts no workflow, so call the release workflow directly.
+  release:
+    needs: version
+    if: needs.version.outputs.release == 'true'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+    secrets: inherit

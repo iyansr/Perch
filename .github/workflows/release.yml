@@ -1,49 +1,67 @@
 name: Release
 
-run-name: "Perch ${{ inputs.version }} #${{ github.run_number }}"
+run-name: "Perch ${{ inputs.version || github.ref_name }} #${{ github.run_number }}"
 
+# Three ways in, one build: push a `v<version>` tag, merge the Changesets version PR (changesets.yml
+# calls this workflow), or run it by hand. A version with a suffix, e.g. 0.2.0-beta.1, is a pre-release.
 on:
-  workflow_dispatch:
+  push:
+    tags: ["v*"]
+  workflow_call:
     inputs:
       version:
         description: "Version, e.g. 0.1.0 (tagged v<version>)"
         type: string
         required: true
-      prerelease:
-        description: "Mark the GitHub Release as a pre-release"
-        type: boolean
-        default: false
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version, e.g. 0.1.0 or 0.2.0-beta.1 (tagged v<version>)"
+        type: string
+        required: true
 
 permissions:
   contents: write
 
-# Two runs for one version would race to create the same tag.
-concurrency:
-  group: release
-  cancel-in-progress: false
-
 jobs:
   release:
     runs-on: xcode-27
-    env:
-      VERSION: ${{ inputs.version }}
-      TAG: v${{ inputs.version }}
-      DMG: dist/Perch-${{ inputs.version }}.dmg
+    # Two runs for one version would race to create the same release.
+    concurrency:
+      group: release
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Full history: the build number is the commit count. Run numbers differ per trigger, since
+          # a called workflow counts the caller's runs, so they could go backwards.
+          fetch-depth: 0
 
-      - name: Check version and tag
+      - name: Resolve version
         env:
           GH_TOKEN: ${{ github.token }}
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
+          # A tag push has no inputs; its ref name is the tag.
+          VERSION="${INPUT_VERSION:-${GITHUB_REF_NAME#v}}"
           if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
             echo "::error::Version '$VERSION' is not semver, e.g. 0.1.0 or 0.2.0-beta.1"
             exit 1
           fi
+          TAG="v$VERSION"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "::error::Release $TAG already exists"
             exit 1
           fi
+          PRERELEASE=false
+          if [[ "$VERSION" == *-* ]]; then PRERELEASE=true; fi
+          {
+            echo "VERSION=$VERSION"
+            echo "TAG=$TAG"
+            echo "DMG=dist/Perch-$VERSION.dmg"
+            echo "PRERELEASE=$PRERELEASE"
+          } >> "$GITHUB_ENV"
+          echo "Releasing $TAG (pre-release: $PRERELEASE)"
 
       - name: Select Xcode 27
         run: |
@@ -77,16 +95,17 @@ jobs:
           rm -f "$RUNNER_TEMP/identity.p12"
           # Lets codesign use the key without an interactive prompt.
           security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
-          # Prepend to the search list so xcodebuild finds "Perch Self-Signed".
-          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | sed 's/"//g')
+          # Prepend to the search list so xcodebuild finds "Perch Self-Signed". xargs unquotes the
+          # existing entries, which `security` prints in double quotes.
+          security list-keychains -d user | xargs security list-keychains -d user -s "$KEYCHAIN"
           security find-identity -p codesigning "$KEYCHAIN"
 
       - name: Build, verify and package
-        run: ./Scripts/build-release.sh "$VERSION" "$GITHUB_RUN_NUMBER"
+        run: ./Scripts/build-release.sh "$VERSION" "$(git rev-list --count HEAD)"
 
       - uses: actions/upload-artifact@v7
         with:
-          name: Perch-${{ inputs.version }}
+          name: Perch-${{ env.VERSION }}
           path: ${{ env.DMG }}
           if-no-files-found: error
 
@@ -94,16 +113,28 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # The tag does not exist yet; generate-notes takes the commit it will point at.
-          gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
-            -f tag_name="$TAG" -f target_commitish="$GITHUB_SHA" --jq .body > "$RUNNER_TEMP/notes.md"
+          # Changesets writes CHANGELOG.md; its section for this version is the curated changelog.
+          # Without one (a hand-pushed tag), fall back to GitHub's notes. The tag may not exist yet, so
+          # generate-notes takes the commit it will point at.
+          if [ -f CHANGELOG.md ] && awk -v v="$VERSION" '$0 == "## " v {found=1} END {exit !found}' CHANGELOG.md; then
+            awk -v v="$VERSION" '$0 == "## " v {on=1; next} on && /^## / {exit} on' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+          else
+            gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+              -f tag_name="$TAG" -f target_commitish="$GITHUB_SHA" --jq .body > "$RUNNER_TEMP/notes.md"
+          fi
           SHA256="$(shasum -a 256 "$DMG" | awk '{print $1}')"
           cat >> "$RUNNER_TEMP/notes.md" <<EOF
 
           ## Install
 
-          1. Download \`Perch-$VERSION.dmg\` and drag Perch to Applications.
-          2. Perch is self-signed, not notarized. Clear the quarantine flag after installing each release so macOS opens it:
+          With Homebrew, which clears the quarantine flag on every install and upgrade:
+
+          \`\`\`sh
+          brew trust --tap iyansr/perch
+          brew install --cask iyansr/perch/perch
+          \`\`\`
+
+          Or download \`Perch-$VERSION.dmg\` and drag Perch to Applications. Perch is self-signed, not notarized, so clear the quarantine flag after installing each release:
 
           \`\`\`sh
           xattr -dr com.apple.quarantine /Applications/Perch.app
@@ -117,16 +148,46 @@ jobs:
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          PRERELEASE: ${{ inputs.prerelease }}
         run: |
           FLAGS=()
-          if [ "$PRERELEASE" = "true" ]; then FLAGS+=(--prerelease); fi
-          gh release create "$TAG" "$DMG" \
+          ASSETS=("$DMG")
+          if [ "$PRERELEASE" = "true" ]; then
+            FLAGS+=(--prerelease)
+          else
+            # Unversioned copy: the website links releases/latest/download/Perch.dmg, which skips pre-releases.
+            cp "$DMG" dist/Perch.dmg
+            ASSETS+=(dist/Perch.dmg)
+          fi
+          gh release create "$TAG" "${ASSETS[@]}" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "Perch $VERSION" \
             --notes-file "$RUNNER_TEMP/notes.md" \
             "${FLAGS[@]}"
+
+      # Pre-releases stay off Homebrew: `brew upgrade` would hand them to everyone.
+      - name: Update Homebrew cask
+        if: env.PRERELEASE != 'true'
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [ -z "$TAP_TOKEN" ]; then
+            echo "::warning::HOMEBREW_TAP_TOKEN not set; skipping the cask bump. See docs/release.md."
+            exit 0
+          fi
+          git clone --depth 1 "https://x-access-token:${TAP_TOKEN}@github.com/iyansr/homebrew-perch.git" "$RUNNER_TEMP/tap"
+          mkdir -p "$RUNNER_TEMP/tap/Casks"
+          ./Scripts/render-cask.sh "$VERSION" "$DMG" > "$RUNNER_TEMP/tap/Casks/perch.rb"
+          cd "$RUNNER_TEMP/tap"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/perch.rb
+          if git diff --cached --quiet; then
+            echo "Cask already at $VERSION."
+          else
+            git commit -m "perch $VERSION"
+            git push
+          fi
 
       - name: Remove signing keychain
         if: always()

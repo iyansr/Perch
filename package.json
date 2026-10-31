@@ -1,0 +1,14 @@
+{
+  "name": "perch",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Release versioning for Perch.app. Changesets bumps the version here; see docs/release.md.",
+  "packageManager": "pnpm@12.4.2",
+  "scripts": {
+    "changeset": "changeset"
+  },
+  "devDependencies": {
+    "@changesets/changelog-github": "^1.0.1",
+    "@changesets/cli": "^3.0.3"
+  }
+}

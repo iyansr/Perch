@@ -34,9 +34,16 @@ SwiftUI and AppKit. On a notched MacBook the black shape grows out of the hardwa
 
 ## Install
 
-Download `Perch-<version>.dmg` from [Releases](https://github.com/iyansr/Perch/releases) and drag Perch to Applications. It needs macOS 26 or later and runs on Apple silicon and Intel.
+Perch needs macOS 26 or later and runs on Apple silicon and Intel. Install it with Homebrew:
 
-Perch is self-signed, not notarized, and has no updater. After installing each release, clear the quarantine flag so macOS opens it:
+```sh
+brew trust --tap iyansr/perch
+brew install --cask iyansr/perch/perch
+```
+
+Homebrew clears the quarantine flag on every install and upgrade, and `brew upgrade` picks up new releases.
+
+Or download `Perch-<version>.dmg` from [Releases](https://github.com/iyansr/Perch/releases) and drag Perch to Applications. Perch is self-signed, not notarized, and has no updater. After installing each release, clear the quarantine flag so macOS opens it:
 
 ```sh
 xattr -dr com.apple.quarantine /Applications/Perch.app
@@ -56,7 +63,7 @@ Run the `Perch` scheme. The Xcode build phase runs `Scripts/build-mediaremote-ad
 
 Debug builds sign with your own Apple Development team. Release builds sign with a self-signed `Perch Self-Signed` identity; create it once with `./Scripts/create-signing-identity.sh`. See [docs/signing.md](docs/signing.md).
 
-Releases are cut by the `Release` GitHub Actions workflow; `./Scripts/build-release.sh <version>` builds the same DMG locally. See [docs/release.md](docs/release.md).
+Add a changeset with each user-facing change (`pnpm changeset`). Merging the version pull request that Changesets opens, or pushing a `v<version>` tag, releases Perch through the `Release` workflow; `./Scripts/build-release.sh <version>` builds the same DMG locally. See [docs/release.md](docs/release.md).
 
 The marketing site lives in `web/` (Astro, pnpm):
 
@@ -78,6 +85,12 @@ perch watch -- <command> [arguments…]         # run a command, report start an
 ```
 
 `event` always fails open: if Perch is not running, the agent never notices.
+
+## Community
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development and pull request guidance, and follow the [Code of Conduct](CODE_OF_CONDUCT.md). Report bugs or suggest features through [issues](https://github.com/iyansr/Perch/issues/new/choose).
+
+Support Perch through [GitHub Sponsors](https://github.com/sponsors/iyansr).
 
 ## Third-party software
 
