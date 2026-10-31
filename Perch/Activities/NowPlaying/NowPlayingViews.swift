@@ -187,7 +187,7 @@ struct MusicCard: View {
         .padding(.horizontal, 18)
         .padding(.vertical, 10)
         .frame(height: Self.height)
-        .background { (tint ?? .clear).opacity(0.12) }
+        .background(.black)
     }
 
     private var tint: Color? {

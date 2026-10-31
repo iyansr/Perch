@@ -15,8 +15,6 @@ final class NotchController {
     /// Runs the conversion the user picks from the drop zone's action list.
     let converter: ImageConverter
     let dropZone: DropZoneController
-    /// Pending collapse of a lingering music card.
-    private var glanceCollapse: Task<Void, Never>?
 
     init(activities: ActivityCenter, search: SearchEngine) {
         model = NotchModel(geometry: screens.geometry, activities: activities, search: search)
@@ -146,7 +144,7 @@ final class NotchController {
         previousApp = frontmost == .current ? nil : frontmost
         // Key, so typing in Home reaches handleHomeKey; no text field has focus yet.
         panel.makeKeyAndOrderFront(nil)
-        model.homePage = .modules
+        model.homePage = .home
         withAnimation(NotchMotion.expand) {
             model.state = .home
             model.isHovering = false
@@ -186,7 +184,7 @@ final class NotchController {
     /// Esc from a search that Home opened: back to the module grid, keyboard still in Perch.
     private func returnHome() {
         panel.makeFirstResponder(nil) // typing goes to handleHomeKey again, not the old field
-        model.homePage = .modules
+        model.homePage = .home
         withAnimation(NotchMotion.expand) { model.state = .home }
         updateHover()
     }
@@ -571,7 +569,7 @@ final class NotchController {
     /// opens search and the same event is passed on to the now-focused field, so it is not lost.
     private func handleHomeKey(_ event: NSEvent) -> NSEvent? {
         if Int(event.keyCode) == kVK_Escape {
-            if model.homePage == .modules { close() } else { showHomePage(.modules) }
+            if model.homePage == .home { close() } else { showHomePage(.home) }
             return nil
         }
         // ⌘/⌃ chords keep their menu meaning.
@@ -598,10 +596,6 @@ final class NotchController {
         // Even while open, clicks outside the surface fall through to the app underneath;
         // the global monitor then closes the panel and the click still lands where the user aimed.
         panel.ignoresMouseEvents = !inside
-        if inside {
-            glanceCollapse?.cancel()
-            glanceCollapse = nil
-        }
 
         switch model.state {
         case .open, .home, .onboarding, .dropZone:
@@ -618,22 +612,9 @@ final class NotchController {
             if model.glanceShowsDecisionCard { return }
             // Typing a reply: the card stays until it is sent or dropped (`endReply`).
             if model.isReplying { return }
-            // The music card lingers, so a control click that drifts past the edge does not collapse it.
-            guard model.glanceShowsMusicCard else {
-                collapseGlance()
-                return
-            }
-            guard glanceCollapse == nil else { return }
-            glanceCollapse = Task { [weak self] in
-                do { try await Task.sleep(for: .seconds(Self.musicCardLinger)) } catch { return }
-                guard let self else { return }
-                glanceCollapse = nil
-                if !isMouseInside { collapseGlance() }
-            }
+            collapseGlance()
         }
     }
-
-    private static let musicCardLinger: TimeInterval = 2
 
     private func collapseGlance() {
         guard model.state == .glance else { return }

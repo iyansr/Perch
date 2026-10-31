@@ -94,10 +94,17 @@ final class BluetoothBatterySource: NSObject, ActivitySource, CBCentralManagerDe
         connected.removeValue(forKey: address)
     }
 
+    /// Every connected device that reports a charge, by name; Home's battery tile reads it on demand.
+    func currentBatteries() -> [DeviceBattery] {
+        guard !connected.isEmpty else { return [] }
+        let hid = Self.hidBatteries()
+        return connected.compactMap { address, device in battery(for: device, address: address, hid: hid) }
+            .sorted { $0.name < $1.name }
+    }
+
     /// Flashes the device that just connected, with every other connected device listed after it.
     private func announce(_ address: String) {
-        let hidBatteries = Self.hidBatteries()
-        let batteries = connected.compactMap { address, device in battery(for: device, address: address, hid: hidBatteries) }
+        let batteries = currentBatteries()
             .sorted { $0.address == address ? true : $1.address == address ? false : $0.name < $1.name }
         guard let device = batteries.first, device.address == address, let level = device.level else { return }
         var activity = Activity(

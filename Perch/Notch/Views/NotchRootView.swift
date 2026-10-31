@@ -17,6 +17,12 @@ struct NotchRootView: View {
                 .frame(width: shape.size.width + 2 * shape.shoulder, height: shape.size.height)
                 .padding(.top, shape.top)
 
+            if model.state == .home {
+                HomeDock(model: model, controller: controller)
+                    .padding(.top, model.panelTop)
+                    .transition(.commandPanel)
+            }
+
             if model.state == .onboarding, let onboarding = model.onboarding {
                 OnboardingCard(model: model, state: onboarding, controller: controller)
                     .padding(.top, model.panelTop)
@@ -154,6 +160,20 @@ private struct NotchSurface: View {
                 .transition(.notchContent)
         case .glance where model.hasGlance:
             GlanceCard(model: model, controller: controller)
+                // Notch mode only: the band beside the hardware notch is empty. The island glance has no
+                // such band, so a button there would sit on the card's own trailing controls.
+                .overlay(alignment: .topTrailing) {
+                    if model.geometry.style == .notch {
+                        Button { controller.openHome() } label: {
+                            Image(systemName: "house").font(.system(size: 13, weight: .medium))
+                        }
+                        .buttonStyle(BarButtonStyle())
+                        .help("Home")
+                        .accessibilityLabel("Home")
+                        .frame(height: model.geometry.notchSize.height)
+                        .padding(.trailing, 12)
+                    }
+                }
                 .transition(.notchContent)
         case .onboarding:
             if let onboarding = model.onboarding {

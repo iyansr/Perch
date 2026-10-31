@@ -18,10 +18,36 @@ enum NotchState: Equatable {
     case dropZone
 }
 
-/// The view inside `.home`: the module grid, or one module zoomed into its detail.
-enum HomePage: Equatable {
-    case modules
+/// The view inside `.home`: the Player tabs, or the Activity detail zoomed out of the Home strip.
+enum HomePage: Equatable, CaseIterable {
+    case home
+    case clipboard
+    case timer
+    case convert
     case activity
+
+    /// Pages the floating dock switches between; Activity is reached from the Home strip.
+    static let tabs: [HomePage] = [.home, .clipboard, .timer, .convert]
+
+    var title: String {
+        switch self {
+        case .home: "Home"
+        case .clipboard: "Clipboard"
+        case .timer: "Timer"
+        case .convert: "Convert"
+        case .activity: "Activity"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .home: "house"
+        case .clipboard: "doc.on.clipboard"
+        case .timer: "timer"
+        case .convert: "photo.on.rectangle.angled"
+        case .activity: "bolt"
+        }
+    }
 }
 
 /// Size and corner shape of the black surface for the current state.
@@ -82,8 +108,8 @@ final class NotchModel {
     var drop: DropSession?
     /// Short message shown in the collapsed surface (e.g. "Press ⌥Space anytime"); nil when hidden.
     var hint: String?
-    /// Which Home view is showing; Home always opens on `.modules`.
-    var homePage: HomePage = .modules
+    /// Which Home page is showing; Home always opens on `.home`.
+    var homePage: HomePage = .home
     /// Measured height of the Home content below the notch; sizes the surface in `.home`.
     var homeContentHeight: CGFloat = 320
     /// Search was opened from Home (module or typing), so esc steps back to Home instead of closing.
@@ -221,9 +247,12 @@ final class NotchModel {
             )
         case (.notch, _):
             let ears = activityCount > 0 ? 2 * Self.earWidth : 0
+            // Flared top corners whenever the pill is wider than the hardware notch, so it reads as grown out of it.
+            let flared = activityCount > 0 || hover > 0
             return ShapeMetrics(
                 size: CGSize(width: notch.width + ears + 16 * hover, height: notch.height + 4 * hover),
-                top: 0, topRadius: 0, bottomRadius: 12 + 2 * hover
+                top: 0, topRadius: 0, bottomRadius: 12 + 2 * hover,
+                shoulder: flared ? Self.expandedShoulder : 0
             )
         case (.island, _):
             // Same pill as iPhone's Dynamic Island: capsule radius, widens for a live activity, swells on hover.
@@ -248,6 +277,14 @@ final class NotchModel {
             width: shape.size.width,
             height: shape.top + shape.size.height
         )
+        if state == .home {
+            rect = rect.union(CGRect(
+                x: (width - HomeDockMetrics.size.width) / 2,
+                y: panelTop,
+                width: HomeDockMetrics.size.width,
+                height: HomeDockMetrics.size.height
+            ))
+        }
         if showsResults || state == .onboarding {
             let panelWidth = showsResults ? NotchGeometry.searchPanelWidth : NotchGeometry.panelWidth
             rect = rect.union(CGRect(
