@@ -1,6 +1,6 @@
 {
   "name": "perch",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "description": "Release versioning for Perch.app. Changesets bumps the version here; see docs/release.md.",
   "packageManager": "pnpm@12.4.2",
