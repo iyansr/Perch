@@ -24,6 +24,7 @@ struct GeneralSettingsPage: View {
                 ) {
                     Toggle("Play sounds", isOn: $settings.playsSounds)
                         .toggleStyle(.switch)
+                        .controlSize(.small)
                         .labelsHidden()
                 }
             }
@@ -60,6 +61,7 @@ struct ClipboardSettingsPage: View {
                 ) {
                     Toggle("Clipboard history", isOn: $settings.clipboardEnabled)
                         .toggleStyle(.switch)
+                        .controlSize(.small)
                         .labelsHidden()
                 }
                 SettingsDivider()
@@ -127,6 +129,7 @@ struct ActivitiesSettingsPage: View {
             ) {
                 Toggle("Replace system HUD", isOn: $settings.replacesSystemHUD)
                     .toggleStyle(.switch)
+                    .controlSize(.small)
                     .labelsHidden()
             }
         case "call":
@@ -139,6 +142,7 @@ struct ActivitiesSettingsPage: View {
             ) {
                 Toggle("Google Meet controls", isOn: $settings.meetControls)
                     .toggleStyle(.switch)
+                    .controlSize(.small)
                     .labelsHidden()
             }
         case "weather":
@@ -179,6 +183,7 @@ struct ActivitiesSettingsPage: View {
                     set: { sources.setEnabled(source, $0) }
                 ))
                 .toggleStyle(.switch)
+                .controlSize(.small)
                 .labelsHidden()
             }
         }
