@@ -438,7 +438,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = Perch;
+				INFOPLIST_KEY_CFBundleDisplayName = "Perch Dev";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSAppleEventsUsageDescription = "Perch brings an agent's terminal tab forward, controls Music and Spotify when system now-playing is unavailable, sends your Messages replies, and works Google Meet's mute, camera and leave buttons.";
@@ -451,8 +451,9 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = id.iyansr.perch;
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_BUNDLE_IDENTIFIER = id.iyansr.perch.dev;
+				PRODUCT_MODULE_NAME = Perch;
+				PRODUCT_NAME = "Perch Dev";
 				SDKROOT = macosx;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = macosx;
@@ -470,9 +471,11 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = Perch/Perch.entitlements;
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_IDENTITY = "Perch Self-Signed";
+				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
+				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = YY38U4HDQ3;
+				DEVELOPMENT_TEAM = "";
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -530,7 +533,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Perch.app/Contents/MacOS/Perch";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Perch Dev.app/Contents/MacOS/Perch Dev";
 			};
 			name = Debug;
 		};
@@ -588,9 +591,11 @@
 		000000000000000412000000 /* Release configuration for PBXNativeTarget "PerchCLI" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_IDENTITY = "Perch Self-Signed";
+				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
+				CODE_SIGN_STYLE = Manual;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = YY38U4HDQ3;
+				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 0.1;

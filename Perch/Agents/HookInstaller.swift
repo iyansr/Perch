@@ -33,10 +33,10 @@ nonisolated struct HookTarget: Sendable {
 /// - Every existing hook stays, in place. Perch's group is appended after the others in each event array, so
 ///   the indexes Codex keys its hook trust on (`hooks.json:<event>:<group>:<hook>`) do not shift.
 /// - Perch's entries are recognised by `marker` in their command, so installing twice is a no-op
-///   and removing touches only Perch's entries.
+///   and removing touches only Perch's entries. It matches both `Perch.app` and the Debug `Perch Dev.app`.
 /// - The command is guarded: it does nothing when the Perch helper is gone, so uninstalling Perch never breaks an agent.
 nonisolated enum HookInstaller {
-    static let marker = "Perch.app/Contents/Helpers/perch"
+    static let marker = "/Contents/Helpers/perch"
     /// Seconds. The helper gives up on the socket after 200 ms; this only bounds a pathological hang.
     static let timeout = 5
     /// Seconds the agent waits for a `PermissionRequest` hook: `perch event --await` holds the agent for up to
