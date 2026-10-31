@@ -1,19 +1,35 @@
 ---
 import { AppleLogoIcon, ArrowRightIcon } from '@phosphor-icons/react/ssr';
 import NotchDemo from './demo/NotchDemo';
+import InstallCommands from './InstallCommands.astro';
 import { SITE } from '../site';
+
+// Rotating headline: each pair rolls in together. First pair is the server-rendered default.
+const HEADLINES = [
+	{ device: 'notch', place: 'for your Mac.' },
+	{ device: 'Dynamic Island', place: 'on your external monitor.' },
+];
 ---
 
 <section id="top" class="mx-auto max-w-6xl px-5 pt-14 sm:pt-20">
-	<div class="mx-auto max-w-3xl text-center">
+	<div class="mx-auto max-w-5xl text-center">
 		<h1 class="display text-[44px] sm:text-[64px] lg:text-[76px]">
-			A Dynamic Island<br />for your Mac.
+			<span class="sr-only">A notch search for your Mac, and a Dynamic Island search on your external monitor.</span>
+			<span aria-hidden="true" data-headline>
+				A{' '}<span class="roller roller-inline" data-roller>
+					{HEADLINES.map((h, i) => <span class="roller-item" data-state={i === 0 ? 'active' : undefined}>{h.device}</span>)}
+				</span>{' '}search<br />
+				<span class="roller roller-block" data-roller>
+					{HEADLINES.map((h, i) => <span class="roller-item" data-state={i === 0 ? 'active' : undefined}>{h.place}</span>)}
+				</span>
+			</span>
 		</h1>
 		<p class="mx-auto mt-5 max-w-[54ch] text-[17px] leading-relaxed text-fg-2 sm:text-[19px]">
 			Perch turns the notch into a command center, and gives external monitors the same floating island. Search, clipboard,
 			file conversion and live status for your coding agents.
 		</p>
-		<div class="mx-auto mt-8 flex flex-wrap items-center justify-center gap-3">
+		<InstallCommands class="mx-auto mt-8 max-w-xl" />
+		<div class="mx-auto mt-6 flex flex-wrap items-center justify-center gap-x-6 gap-y-3">
 			<a
 				href={SITE.downloadUrl}
 				class="press inline-flex h-12 items-center gap-2 rounded-full bg-accent px-6 text-[16px] font-semibold text-accent-ink hover:bg-[#ffad2e]"
@@ -21,11 +37,8 @@ import { SITE } from '../site';
 				<AppleLogoIcon size={18} weight="fill" aria-hidden="true" />
 				Download for Mac
 			</a>
-			<a
-				href="#agents"
-				class="press inline-flex h-12 items-center gap-2 rounded-full border border-line-strong px-5 text-[16px] font-medium text-fg hover:bg-white/[0.05]"
-			>
-				How agents connect
+			<a href="#demo" class="inline-flex h-12 items-center gap-2 text-[16px] font-medium text-fg-2 transition-colors hover:text-fg">
+				See it in action
 				<ArrowRightIcon size={16} weight="bold" aria-hidden="true" />
 			</a>
 		</div>
@@ -35,3 +48,93 @@ import { SITE } from '../site';
 		<NotchDemo client:load />
 	</div>
 </section>
+
+<style>
+	/* Items share one grid cell; the cell clips vertically so text rolls in from below and out the top. */
+	.roller {
+		/* Negative vertical insets keep ascenders/descenders visible; edges clip while the cell resizes. */
+		clip-path: inset(-0.15em 0 -0.25em 0);
+		transition:
+			width 600ms cubic-bezier(0.32, 0.72, 0, 1),
+			height 600ms cubic-bezier(0.32, 0.72, 0, 1);
+	}
+	.roller-inline {
+		display: inline-grid;
+		justify-items: start;
+		white-space: nowrap;
+	}
+	.roller-block {
+		display: grid;
+		justify-items: center;
+		align-items: start;
+	}
+	.roller-item {
+		grid-area: 1 / 1;
+		transform: translateY(110%);
+		opacity: 0;
+		transition:
+			transform 600ms cubic-bezier(0.32, 0.72, 0, 1),
+			opacity 400ms ease;
+	}
+	.roller-block .roller-item {
+		transition-delay: 70ms;
+	}
+	.roller-item[data-state='active'] {
+		transform: none;
+		opacity: 1;
+	}
+	.roller-item[data-state='leaving'] {
+		transform: translateY(-110%);
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.roller-item,
+		.roller-item[data-state='leaving'] {
+			transform: none;
+		}
+		.roller {
+			transition: none;
+		}
+	}
+</style>
+
+<script>
+	const INTERVAL_MS = 2800;
+
+	const rollers = [...document.querySelectorAll<HTMLElement>('[data-headline] [data-roller]')];
+	const count = rollers[0]?.children.length ?? 0;
+	let index = 0;
+
+	// Size each cell to its active item: the inline word lets "search" glide instead of leaving a gap,
+	// and the block line collapses when the shorter phrase does not wrap.
+	const fit = () => {
+		for (const roller of rollers) {
+			const active = roller.children[index] as HTMLElement;
+			if (roller.classList.contains('roller-inline')) roller.style.width = `${active.offsetWidth}px`;
+			else roller.style.height = `${active.offsetHeight}px`;
+		}
+	};
+
+	const advance = () => {
+		const next = (index + 1) % count;
+		for (const roller of rollers) {
+			const items = roller.children as HTMLCollectionOf<HTMLElement>;
+			const incoming = items[next];
+			// Snap the incoming item back below the cell without animating, so it always rolls upward.
+			incoming.style.transition = 'none';
+			delete incoming.dataset.state;
+			void incoming.offsetHeight;
+			incoming.style.transition = '';
+			items[index].dataset.state = 'leaving';
+			incoming.dataset.state = 'active';
+		}
+		index = next;
+		fit();
+	};
+
+	if (count > 1) {
+		fit();
+		window.addEventListener('resize', fit);
+		setInterval(advance, INTERVAL_MS);
+	}
+</script>

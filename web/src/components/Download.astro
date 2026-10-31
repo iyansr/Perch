@@ -2,6 +2,7 @@
 import { Image } from 'astro:assets';
 import { AppleLogoIcon } from '@phosphor-icons/react/ssr';
 import icon from '../assets/perch-icon.png';
+import InstallCommands from './InstallCommands.astro';
 import { SITE } from '../site';
 ---
 
@@ -12,6 +13,7 @@ import { SITE } from '../site';
 		<Image src={icon} alt="Perch app icon" width={112} height={112} class="size-28" />
 		<h2 class="display mt-8 max-w-[16ch] text-[34px] sm:text-[48px]">Give your notch a job.</h2>
 		<p class="mt-4 text-[16px] text-fg-2">Runs on {SITE.minimumOS}.</p>
+		<InstallCommands class="mt-8 max-w-xl" />
 		<a
 			href={SITE.downloadUrl}
 			class="press mt-8 inline-flex h-12 items-center gap-2 rounded-full bg-accent px-6 text-[16px] font-semibold text-accent-ink hover:bg-[#ffad2e]"
@@ -19,5 +21,10 @@ import { SITE } from '../site';
 			<AppleLogoIcon size={18} weight="fill" aria-hidden="true" />
 			Download for Mac
 		</a>
+		<p class="mt-5 max-w-[52ch] text-[14px] leading-relaxed text-fg-2">
+			Perch is self-signed, not notarized. Homebrew handles that for you. After installing the DMG by hand, run this once per
+			release:
+		</p>
+		<code class="mt-2 max-w-full font-mono text-[13px] break-all text-fg">xattr -dr com.apple.quarantine /Applications/Perch.app</code>
 	</div>
 </section>

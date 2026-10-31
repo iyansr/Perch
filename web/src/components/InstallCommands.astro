@@ -1,0 +1,62 @@
+---
+import { CheckIcon, CopyIcon } from '@phosphor-icons/react/ssr';
+import { SITE } from '../site';
+
+interface Props {
+	class?: string;
+}
+
+const { class: className } = Astro.props;
+---
+
+<ul class:list={['flex w-full flex-col gap-2.5 text-left', className]} aria-label="Install with Homebrew">
+	{
+		SITE.installCommands.map((command) => (
+			<li class="flex h-14 items-center gap-3 rounded-tile border border-line bg-raised pr-2 pl-4 sm:pl-5">
+				<span class="font-mono text-[13px] text-accent select-none sm:text-[15px]" aria-hidden="true">
+					$
+				</span>
+				<code class="min-w-0 flex-1 overflow-x-auto font-mono text-[13px] whitespace-nowrap text-fg sm:text-[15px]">{command}</code>
+				<button
+					type="button"
+					data-copy={command}
+					class="press inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full px-3 text-[14px] text-fg-2 hover:bg-white/[0.05] hover:text-fg"
+				>
+					<span data-icon="copy" class="inline-flex">
+						<CopyIcon size={16} aria-hidden="true" />
+					</span>
+					<span data-icon="check" class="hidden">
+						<CheckIcon size={16} weight="bold" aria-hidden="true" />
+					</span>
+					<span data-label aria-live="polite" class="max-sm:sr-only">Copy</span>
+					<span class="sr-only">{command}</span>
+				</button>
+			</li>
+		))
+	}
+</ul>
+
+<script>
+	for (const button of document.querySelectorAll<HTMLButtonElement>('button[data-copy]')) {
+		let reset: number | undefined;
+		button.addEventListener('click', async () => {
+			try {
+				await navigator.clipboard.writeText(button.dataset.copy ?? '');
+			} catch {
+				return;
+			}
+			const label = button.querySelector('[data-label]');
+			const copyIcon = button.querySelector('[data-icon="copy"]');
+			const checkIcon = button.querySelector('[data-icon="check"]');
+			if (label) label.textContent = 'Copied';
+			copyIcon?.classList.add('hidden');
+			checkIcon?.classList.replace('hidden', 'inline-flex');
+			window.clearTimeout(reset);
+			reset = window.setTimeout(() => {
+				if (label) label.textContent = 'Copy';
+				copyIcon?.classList.remove('hidden');
+				checkIcon?.classList.replace('inline-flex', 'hidden');
+			}, 1600);
+		});
+	}
+</script>
