@@ -18,6 +18,7 @@ final class AppSettings {
         static let dictationHotkey = "perch.dictationHotkey"
         static let shortcuts = "perch.shortcuts"
         static let hiddenInLauncher = "perch.hiddenInLauncher"
+        static let mediaInactivityMinutes = "perch.mediaInactivityMinutes"
     }
 
     /// Activity sources on for a fresh install: the ones that need no permission.
@@ -66,6 +67,11 @@ final class AppSettings {
         didSet { defaults.set(hiddenInLauncher.sorted(), forKey: Key.hiddenInLauncher) }
     }
 
+    /// Hide paused media after this many minutes.
+    var mediaInactivityMinutes: Int {
+        didSet { defaults.set(mediaInactivityMinutes, forKey: Key.mediaInactivityMinutes) }
+    }
+
     static let defaultDictationHotkey = Shortcut(keyCode: UInt32(kVK_ANSI_D), carbonModifiers: UInt32(controlKey | optionKey))
 
     init(defaults: UserDefaults = .standard) {
@@ -84,5 +90,6 @@ final class AppSettings {
         shortcuts = defaults.data(forKey: Key.shortcuts)
             .flatMap { try? JSONDecoder().decode([String: Shortcut].self, from: $0) } ?? [:]
         hiddenInLauncher = Set(defaults.stringArray(forKey: Key.hiddenInLauncher) ?? [])
+        mediaInactivityMinutes = max(1, defaults.object(forKey: Key.mediaInactivityMinutes) as? Int ?? 5)
     }
 }

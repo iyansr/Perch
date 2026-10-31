@@ -1,12 +1,51 @@
 import AppKit
 import SwiftUI
+import ServiceManagement
 
 struct GeneralSettingsPage: View {
     @Bindable private var settings = AppSettings.shared
+    @State private var launchStatus = SMAppService.mainApp.status
+    @State private var launchError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             SettingsPageHeader(section: .general)
+            SettingsGroup(title: "Startup") {
+                SettingsRow(
+                    symbol: "power",
+                    title: "Open at login",
+                    detail: "Start Perch automatically when you sign in to your Mac."
+                ) {
+                    Toggle("Open at login", isOn: Binding(
+                        get: { launchStatus == .enabled || launchStatus == .requiresApproval },
+                        set: { enabled in
+                            do {
+                                if enabled {
+                                    try SMAppService.mainApp.register()
+                                } else {
+                                    try SMAppService.mainApp.unregister()
+                                }
+                            } catch {
+                                launchError = error.localizedDescription
+                            }
+                            launchStatus = SMAppService.mainApp.status
+                        }
+                    ))
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+                    .labelsHidden()
+                }
+                if launchStatus == .requiresApproval {
+                    SettingsDivider()
+                    SettingsRow(
+                        symbol: "exclamationmark.circle",
+                        title: "Approval required",
+                        detail: "Allow Perch in System Settings › General › Login Items & Extensions."
+                    ) {
+                        Button("Open System Settings…") { SMAppService.openSystemSettingsLoginItems() }
+                    }
+                }
+            }
             SettingsGroup(title: "Global Shortcut") {
                 SettingsRow(
                     symbol: "command",
@@ -28,6 +67,20 @@ struct GeneralSettingsPage: View {
                         .labelsHidden()
                 }
             }
+        }
+        .task {
+            while !Task.isCancelled {
+                launchStatus = SMAppService.mainApp.status
+                try? await Task.sleep(for: .seconds(1))
+            }
+        }
+        .alert("Could not change Open at login", isPresented: Binding(
+            get: { launchError != nil },
+            set: { if !$0 { launchError = nil } }
+        )) {
+            Button("OK") { launchError = nil }
+        } message: {
+            Text(launchError ?? "")
         }
     }
 }
@@ -119,6 +172,20 @@ struct ActivitiesSettingsPage: View {
     @ViewBuilder
     private func options(for id: String) -> some View {
         switch id {
+        case "nowPlaying":
+            SettingsDivider()
+            SettingsRow(
+                symbol: "clock",
+                tint: .secondary,
+                title: "Hide inactive media after",
+                detail: "Hide paused or stopped media after this delay. Playback brings it back; no player hides immediately."
+            ) {
+                Stepper(value: $settings.mediaInactivityMinutes, in: 1...60) {
+                    Text("\(settings.mediaInactivityMinutes) min")
+                        .monospacedDigit()
+                }
+                .fixedSize()
+            }
         case "hud":
             SettingsDivider()
             SettingsRow(

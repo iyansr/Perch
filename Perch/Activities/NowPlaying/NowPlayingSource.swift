@@ -3,7 +3,7 @@ import CoreImage
 import CoreImage.CIFilterBuiltins
 import SwiftUI
 
-/// System-wide now playing: one persistent activity while any player reports a track.
+/// System-wide now playing: visible during playback and briefly after it pauses.
 /// Reads through `MediaRemoteAdapter`; if that breaks, Music and Spotify via AppleScript.
 final class NowPlayingSource: ActivitySource {
     static let id = "nowPlaying"
@@ -26,9 +26,26 @@ final class NowPlayingSource: ActivitySource {
     private var artworkCache: (data: Data, image: NSImage?, tint: NSColor?)?
     /// When the current track first showed; orders the activity against other running ones.
     private var trackStartedAt = Date()
+    private let settings: AppSettings
+    private let now: () -> Date
+    private var inactiveSince: Date?
+    private var visibilityTimer: Timer?
+    private var isVisible = false
+
+    init(center: ActivityCenter? = nil, settings: AppSettings = .shared, now: @escaping () -> Date = Date.init) {
+        self.center = center
+        self.settings = settings
+        self.now = now
+    }
 
     func start(center: ActivityCenter) {
         self.center = center
+        visibilityTimer?.invalidate()
+        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refreshVisibility() }
+        }
+        visibilityTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
         if let adapter = MediaRemoteAdapter() {
             self.adapter = adapter
             adapter.start(onUpdate: { [weak self] in self?.apply($0) }, onFailure: { [weak self] in self?.useFallback() })
@@ -38,6 +55,10 @@ final class NowPlayingSource: ActivitySource {
     }
 
     func stop() {
+        visibilityTimer?.invalidate()
+        visibilityTimer = nil
+        inactiveSince = nil
+        isVisible = false
         adapter?.stop()
         adapter = nil
         fallback?.stop()
@@ -100,9 +121,11 @@ final class NowPlayingSource: ActivitySource {
         fallback.start { [weak self] in self?.apply($0) }
     }
 
-    private func apply(_ snapshot: MediaSnapshot?) {
+    func apply(_ snapshot: MediaSnapshot?) {
         guard let snapshot else {
             current = nil
+            inactiveSince = nil
+            isVisible = false
             center?.dismiss(activityID)
             return
         }
@@ -120,7 +143,7 @@ final class NowPlayingSource: ActivitySource {
             artwork: artwork,
             tint: tint
         )
-        if let current, current.isSameTrack(as: media) {} else { trackStartedAt = Date() }
+        if let current, current.isSameTrack(as: media) {} else { trackStartedAt = now() }
         publish(media)
     }
 
@@ -130,7 +153,17 @@ final class NowPlayingSource: ActivitySource {
     }
 
     private func publish(_ media: NowPlaying) {
+        if media.isPlaying {
+            inactiveSince = nil
+        } else if inactiveSince == nil || current?.isSameTrack(as: media) != true {
+            inactiveSince = now()
+        }
         current = media
+        guard !hasExpired else {
+            center?.dismiss(activityID)
+            isVisible = false
+            return
+        }
         var activity = Activity(
             id: activityID,
             kind: .nowPlaying(bundleID: media.bundleID),
@@ -143,6 +176,25 @@ final class NowPlayingSource: ActivitySource {
         )
         activity.media = media
         center?.show(activity)
+        isVisible = true
+    }
+
+    private var hasExpired: Bool {
+        guard let inactiveSince else { return false }
+        return now().timeIntervalSince(inactiveSince) >= Double(settings.mediaInactivityMinutes) * 60
+    }
+
+    /// Also runs without player updates, so a silent paused player still expires.
+    func refreshVisibility() {
+        guard let current else { return }
+        if hasExpired {
+            if isVisible {
+                center?.dismiss(activityID)
+                isVisible = false
+            }
+        } else if !isVisible {
+            publish(current)
+        }
     }
 
     private func decodeArtwork(_ data: Data?) -> (NSImage?, NSColor?) {
