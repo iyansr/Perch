@@ -1,5 +1,11 @@
 # perch
 
+## 0.1.5
+
+### Patch Changes
+
+- [`4db78bd`](https://github.com/iyansr/Perch/commit/4db78bd7367702f447880222667a9d52f82fb6cc) Thanks [@iyansr](https://github.com/iyansr)! - Fix a crash at launch when a Bluetooth device is connected and the Bluetooth Battery source is on.
+
 ## 0.1.4
 
 ### Patch Changes
