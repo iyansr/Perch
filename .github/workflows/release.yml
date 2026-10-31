@@ -1,0 +1,133 @@
+name: Release
+
+run-name: "Perch ${{ inputs.version }} #${{ github.run_number }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version, e.g. 0.1.0 (tagged v<version>)"
+        type: string
+        required: true
+      prerelease:
+        description: "Mark the GitHub Release as a pre-release"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+# Two runs for one version would race to create the same tag.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: xcode-27
+    env:
+      VERSION: ${{ inputs.version }}
+      TAG: v${{ inputs.version }}
+      DMG: dist/Perch-${{ inputs.version }}.dmg
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check version and tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::Version '$VERSION' is not semver, e.g. 0.1.0 or 0.2.0-beta.1"
+            exit 1
+          fi
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release $TAG already exists"
+            exit 1
+          fi
+
+      - name: Select Xcode 27
+        run: |
+          # Real folders only: an image's Xcode_27.N.app symlink can point at a release candidate.
+          XCODE_PATH="$(find -E /Applications -maxdepth 1 -type d -regex '.*/Xcode_27(\.[0-9]+)*\.app' | sort -V | tail -n1)"
+          if [ -z "$XCODE_PATH" ]; then
+            XCODE_PATH="$(xcode-select -p | sed 's|/Contents/Developer$||')"
+            echo "::warning::No Xcode_27.x folder found; using the image default $XCODE_PATH"
+          fi
+          echo "DEVELOPER_DIR=$XCODE_PATH/Contents/Developer" >> "$GITHUB_ENV"
+          DEVELOPER_DIR="$XCODE_PATH/Contents/Developer" xcodebuild -version
+
+      # The SAME certificate on every release is what keeps users' privacy grants across updates.
+      # Scripts/verify-signature.sh fails the run if a different one is imported.
+      - name: Import signing identity
+        env:
+          P12_BASE64: ${{ secrets.SIGNING_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.SIGNING_P12_PASSWORD }}
+        run: |
+          if [ -z "$P12_BASE64" ] || [ -z "$P12_PASSWORD" ]; then
+            echo "::error::SIGNING_P12_BASE64 and SIGNING_P12_PASSWORD must be set. See docs/release.md."
+            exit 1
+          fi
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
+          echo "$P12_BASE64" | base64 --decode > "$RUNNER_TEMP/identity.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/identity.p12" -k "$KEYCHAIN" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/identity.p12"
+          # Lets codesign use the key without an interactive prompt.
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          # Prepend to the search list so xcodebuild finds "Perch Self-Signed".
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | sed 's/"//g')
+          security find-identity -p codesigning "$KEYCHAIN"
+
+      - name: Build, verify and package
+        run: ./Scripts/build-release.sh "$VERSION" "$GITHUB_RUN_NUMBER"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Perch-${{ inputs.version }}
+          path: ${{ env.DMG }}
+          if-no-files-found: error
+
+      - name: Compose release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The tag does not exist yet; generate-notes takes the commit it will point at.
+          gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+            -f tag_name="$TAG" -f target_commitish="$GITHUB_SHA" --jq .body > "$RUNNER_TEMP/notes.md"
+          SHA256="$(shasum -a 256 "$DMG" | awk '{print $1}')"
+          cat >> "$RUNNER_TEMP/notes.md" <<EOF
+
+          ## Install
+
+          1. Download \`Perch-$VERSION.dmg\` and drag Perch to Applications.
+          2. Perch is self-signed, not notarized. Clear the quarantine flag after installing each release so macOS opens it:
+
+          \`\`\`sh
+          xattr -dr com.apple.quarantine /Applications/Perch.app
+          \`\`\`
+
+          Requires macOS 26 or later. Universal: Apple silicon and Intel.
+
+          SHA-256 \`$SHA256\`
+          EOF
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          FLAGS=()
+          if [ "$PRERELEASE" = "true" ]; then FLAGS+=(--prerelease); fi
+          gh release create "$TAG" "$DMG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Perch $VERSION" \
+            --notes-file "$RUNNER_TEMP/notes.md" \
+            "${FLAGS[@]}"
+
+      - name: Remove signing keychain
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true

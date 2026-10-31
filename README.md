@@ -34,7 +34,13 @@ SwiftUI and AppKit. On a notched MacBook the black shape grows out of the hardwa
 
 ## Install
 
-Perch is not yet published as a release. Build it from source (below).
+Download `Perch-<version>.dmg` from [Releases](https://github.com/iyansr/Perch/releases) and drag Perch to Applications. It needs macOS 26 or later and runs on Apple silicon and Intel.
+
+Perch is self-signed, not notarized, and has no updater. After installing each release, clear the quarantine flag so macOS opens it:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/Perch.app
+```
 
 ## Building from source
 
@@ -49,6 +55,8 @@ open Perch.xcodeproj
 Run the `Perch` scheme. The Xcode build phase runs `Scripts/build-mediaremote-adapter.sh` for you.
 
 Debug builds sign with your own Apple Development team. Release builds sign with a self-signed `Perch Self-Signed` identity; create it once with `./Scripts/create-signing-identity.sh`. See [docs/signing.md](docs/signing.md).
+
+Releases are cut by the `Release` GitHub Actions workflow; `./Scripts/build-release.sh <version>` builds the same DMG locally. See [docs/release.md](docs/release.md).
 
 The marketing site lives in `web/` (Astro, pnpm):
 

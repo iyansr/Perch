@@ -58,7 +58,8 @@ security export -t identities -f pkcs12 -k ~/Library/Keychains/login.keychain-db
 `security export` exports every identity in the keychain. To keep only Perch's, open Keychain Access,
 select the `Perch Self-Signed` certificate, and use File › Export Items… instead.
 
-The same `.p12`, base64-encoded, is what a CI release job would import. Perch has no CI yet.
+The release workflow imports this `.p12` from repository secrets. Export it with Keychain Access, not
+`security export`, so the secret holds only Perch's identity. See [release.md](release.md).
 
 ## Gatekeeper
 
