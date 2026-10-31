@@ -1,5 +1,7 @@
 export type Surface = 'idle' | 'glance' | 'home' | 'panel' | 'drop' | 'convert';
 export type Display = 'notch' | 'island';
+/** Pages the Home dock switches between; Activity is reached from Home. */
+export type HomePage = 'home' | 'clipboard' | 'timer' | 'convert' | 'activity';
 export type Tone = 'running' | 'attention' | 'done' | 'failed';
 
 export type ActivityItem = {

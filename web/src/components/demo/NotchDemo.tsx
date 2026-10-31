@@ -4,8 +4,29 @@ import { buildSections, ClipboardPanel, filterClips, ResultsPanel, SearchRow } f
 import { SOURCE_FILE, type Clip, type ConvertAction, type Result, type Scope } from './data';
 import { DraggableFile, FileThumb, MenuBar, Terminal } from './Desktop';
 import { HotkeyKeys } from './HotkeyKeys';
-import { ActivityPage, CompactView, ConvertView, DropView, GlanceView, HomeView } from './IslandViews';
-import { clock, TONE_RANK, type ActivityItem, type ConvertState, type Display, type Surface, type TimerState } from './model';
+import {
+	ActivityPage,
+	ClipboardPage,
+	CompactView,
+	ConvertPage,
+	ConvertView,
+	DropView,
+	GlanceView,
+	HomeBar,
+	HomeDock,
+	HomeView,
+	TimerPage,
+} from './IslandViews';
+import {
+	clock,
+	TONE_RANK,
+	type ActivityItem,
+	type ConvertState,
+	type Display,
+	type HomePage,
+	type Surface,
+	type TimerState,
+} from './model';
 import { useAgent } from './useAgent';
 
 /** Opening carries a hint of overshoot like the app's expand curve; closing settles without it. */
@@ -44,7 +65,7 @@ export default function NotchDemo() {
 	const [viaCommand, setViaCommand] = useState(false);
 	const [active, setActive] = useState(0);
 	const [fromHome, setFromHome] = useState(false);
-	const [homePage, setHomePage] = useState<'modules' | 'activity'>('modules');
+	const [homePage, setHomePage] = useState<HomePage>('home');
 	const [dropHot, setDropHot] = useState(false);
 	const [timer, setTimer] = useState<TimerState>({ phase: 'off' });
 	const [convert, setConvert] = useState<ConvertState>({ phase: 'off' });
@@ -159,9 +180,9 @@ export default function NotchDemo() {
 			h = pad + contentH;
 			break;
 		case 'home':
-			// NotchGeometry.panelWidth
+			// NotchGeometry.panelWidth; the bar inside Home already covers the notch band.
 			w = Math.min(480, maxW);
-			h = pad + contentH;
+			h = contentH;
 			break;
 		case 'panel':
 			// NotchGeometry.searchPanelWidth, NotchModel.openRowHeight
@@ -182,7 +203,10 @@ export default function NotchDemo() {
 	const rTop = isNotch ? 0 : rBottom;
 	// Share of the open search surface that stays solid black: the hardware notch, or the island's top 40%.
 	const solidPct = isNotch ? Math.round((pad / h) * 100) : 40;
-	const contentPad = surface === 'idle' ? 0 : pad;
+	// Home draws its own bar in the notch band (or as the island's first row), so its content starts at the top.
+	const contentPad = surface === 'idle' || surface === 'home' ? 0 : pad;
+	// HomeDock: a glass pill 10 pt under the surface while Home is open.
+	const dockTop = top + h + 10;
 	const open = surface === 'home' || surface === 'panel' || surface === 'convert';
 
 	// React 19 ref cleanup disconnects the observer when the content leaves.
@@ -199,7 +223,7 @@ export default function NotchDemo() {
 	const close = () => {
 		const hadFocus = islandRef.current?.contains(document.activeElement);
 		setSurface('idle');
-		setHomePage('modules');
+		setHomePage('home');
 		setQuery('');
 		setScope('root');
 		setViaCommand(false);
@@ -316,9 +340,9 @@ export default function NotchDemo() {
 	};
 
 	const onStageKey = (e: KeyboardEvent<HTMLDivElement>) => {
-		if (e.key === 'Escape' && surface === 'home' && homePage === 'activity') {
+		if (e.key === 'Escape' && surface === 'home' && homePage !== 'home') {
 			e.preventDefault();
-			setHomePage('modules');
+			setHomePage('home');
 			focusIsland();
 			return;
 		}
@@ -395,41 +419,78 @@ export default function NotchDemo() {
 		case 'glance':
 			content = <GlanceView items={items} timer={timer} onFocusAgent={focusAgent} onToggleTimer={toggleTimer} />;
 			break;
-		case 'home':
-			// HomeView.swift: 16 pt sides and bottom; 8 pt under the notch, 14 pt on the island.
-			content = (
-				<div className="px-4 pb-4" style={{ paddingTop: isNotch ? 8 : 14 }}>
-					{homePage === 'activity' ? (
+		case 'home': {
+			const showPage = (page: HomePage) => {
+				setHomePage(page);
+				focusIsland();
+			};
+			const last = agent.lines.at(-1);
+			let page;
+			switch (homePage) {
+				case 'activity':
+					page = (
 						<ActivityPage
 							items={items}
 							timer={timer}
 							onFocusAgent={focusAgent}
 							onToggleTimer={toggleTimer}
-							onBack={() => {
-								setHomePage('modules');
+							onBack={() => showPage('home')}
+						/>
+					);
+					break;
+				case 'clipboard':
+					page = <ClipboardPage say={say} onOpenHistory={() => openPanel('clipboard', '', true)} />;
+					break;
+				case 'timer':
+					page = (
+						<TimerPage
+							timer={timer}
+							now={now}
+							onStart={(label, minutes) => {
+								startTimer(label, minutes);
 								focusIsland();
 							}}
+							onToggle={toggleTimer}
+							onCancel={() => setTimer({ phase: 'off' })}
 						/>
-					) : (
+					);
+					break;
+				case 'convert':
+					page = <ConvertPage items={items} convert={convert} />;
+					break;
+				case 'home':
+					page = (
 						<HomeView
 							items={items}
 							timer={timer}
 							now={now}
-							convert={convert}
+							agentAsk={agent.status === 'input' ? last?.text : undefined}
+							onAllow={() => agent.dispatch({ type: 'allow' })}
+							onDeny={() => agent.dispatch({ type: 'deny' })}
 							onFocusAgent={focusAgent}
 							onToggleTimer={toggleTimer}
 							onStartTimer={startTimer}
-							onOpenSearch={(target) => openPanel(target === 'clipboard' ? 'clipboard' : 'root', '', true)}
-							onOpenActivity={() => {
-								setHomePage('activity');
-								focusIsland();
-							}}
-							onSettings={() => say('Opens Perch Settings')}
+							onOpenActivity={() => showPage('activity')}
+							say={say}
 						/>
-					)}
+					);
+					break;
+			}
+			// HomeView.swift: the bar sits in the notch band, or is the island's 32 pt first row; pages pad 16 below.
+			content = (
+				<div>
+					<HomeBar
+						height={isNotch ? notchH : 32}
+						onSearch={() => openPanel('root', '', true)}
+						onSettings={() => say('Opens Perch Settings')}
+					/>
+					<div className="px-4 pb-4" style={{ paddingTop: isNotch ? 8 : 6 }}>
+						{page}
+					</div>
 				</div>
 			);
 			break;
+		}
 		case 'panel':
 			content = (
 				<SearchRow
@@ -647,6 +708,28 @@ export default function NotchDemo() {
 						)}
 					</AnimatePresence>
 				</motion.div>
+
+				<AnimatePresence>
+					{surface === 'home' && (
+						<motion.div
+							key="dock"
+							className="absolute left-1/2 z-30"
+							style={{ x: '-50%' }}
+							initial={reduce ? { opacity: 0, top: dockTop } : { opacity: 0, y: -8, scale: 0.94, top: dockTop }}
+							animate={{ opacity: 1, y: 0, scale: 1, top: dockTop }}
+							exit={{ opacity: 0, transition: { duration: 0.15 } }}
+							transition={reduce ? { duration: 0 } : SPRING_OPEN}
+						>
+							<HomeDock
+								page={homePage === 'activity' ? 'home' : homePage}
+								onPage={(page) => {
+									setHomePage(page);
+									focusIsland();
+								}}
+							/>
+						</motion.div>
+					)}
+				</AnimatePresence>
 
 				<AnimatePresence>
 					{surface === 'panel' && (

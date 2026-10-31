@@ -133,3 +133,17 @@ export const CONVERT_ACTIONS: ConvertAction[] = [
 ];
 
 export const SOURCE_FILE = { base: 'Screenshot', ext: 'heic', size: '4.1 MB' };
+
+/** Other agent sessions Home's Agents tile lists beside the live Claude one. */
+export const OTHER_AGENTS = [
+	{ id: 'codex', source: 'codex', title: 'Codex · web', status: 'running', age: '8m' },
+	{ id: 'watch', source: 'watch', title: 'pnpm build', status: 'done', age: '24m' },
+] as const;
+
+export const TRACK = { title: 'Danger Line', artist: 'Avenged Sevenfold', duration: 329 };
+export const MEETING = { title: 'Sprint standup', time: '10:00', app: 'Zoom' };
+export const WEATHER = { temp: '24°', place: 'Jakarta' };
+export const DEVICES = [
+	{ name: 'AirPods Pro', percent: 64 },
+	{ name: 'Magic Mouse', percent: 18 },
+];

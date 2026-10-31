@@ -13,7 +13,7 @@ const states = [
 	{
 		name: 'Home',
 		how: 'Click',
-		body: 'Activity, timer, latest clip, search and a drop well, laid out like Control Center.',
+		body: 'Agents, music, your next meeting, focus, weather and batteries at a glance. A glass dock switches pages.',
 	},
 	{
 		name: 'Command panel',
@@ -55,13 +55,26 @@ const states = [
 							</div>
 						)}
 						{i === 2 && (
-							<div class="absolute top-0 left-1/2 grid w-52 -translate-x-1/2 grid-cols-3 gap-1.5 rounded-b-[16px] bg-black p-2 pt-8">
-								<span class="col-span-2 h-10 rounded-[7px] bg-white/[0.12]" />
-								<span class="h-10 rounded-[7px] bg-white/[0.12]" />
-								<span class="h-8 rounded-[7px] bg-white/[0.12]" />
-								<span class="h-8 rounded-[7px] bg-white/[0.12]" />
-								<span class="h-8 rounded-[7px] border border-dashed border-white/25" />
-							</div>
+							<>
+								<div class="absolute top-0 left-1/2 grid w-52 -translate-x-1/2 grid-cols-[1.15fr_1fr] gap-1.5 rounded-b-[16px] bg-black p-2 pt-8">
+									<span class="row-span-2 h-[70px] rounded-[7px] bg-white/[0.12]">
+										<span class="mt-2 ml-2 block h-1.5 w-12 rounded-full bg-accent" />
+									</span>
+									<span class="h-8 rounded-[7px] bg-white/[0.12]" />
+									<span class="h-[30px] rounded-[7px] bg-white/[0.12]" />
+									<span class="col-span-2 grid h-6 grid-cols-3 gap-1.5">
+										<span class="rounded-[7px] bg-white/[0.12]" />
+										<span class="rounded-[7px] bg-white/[0.12]" />
+										<span class="rounded-[7px] bg-white/[0.12]" />
+									</span>
+								</div>
+								<div class="absolute top-[118px] left-1/2 flex -translate-x-1/2 gap-0.5 rounded-full border border-white/20 bg-white/10 p-0.5">
+									<span class="h-2 w-3 rounded-full bg-white/50" />
+									<span class="h-2 w-3 rounded-full" />
+									<span class="h-2 w-3 rounded-full" />
+									<span class="h-2 w-3 rounded-full" />
+								</div>
+							</>
 						)}
 						{i === 3 && (
 							<>
