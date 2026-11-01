@@ -1,5 +1,11 @@
 # perch
 
+## 0.1.6
+
+### Patch Changes
+
+- [#4](https://github.com/iyansr/Perch/pull/4) [`efc22b9`](https://github.com/iyansr/Perch/commit/efc22b9498d06031e4de371aebfb9321c3714d16) Thanks [@iyansr](https://github.com/iyansr)! - Answer Claude's questions from Perch: an `AskUserQuestion` prompt now shows its options, and picking one answers it in the terminal session. Approving a plan from Perch also takes effect now.
+
 ## 0.1.5
 
 ### Patch Changes
