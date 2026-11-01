@@ -274,8 +274,8 @@ final class AirDropSource: ActivitySource {
         if CNContactStore.authorizationStatus(for: .contacts) == .notDetermined {
             CNContactStore().requestAccess(for: .contacts) { _, _ in }
         }
-        DecisionRouter.shared.register(owner: Self.owner) { [weak self] id, accepted in
-            self?.answer(transferID: id, accepted: accepted)
+        DecisionRouter.shared.register(owner: Self.owner) { [weak self] id, answer in
+            self?.answer(transferID: id, accepted: answer == .accept)
         }
         NotificationFeed.shared.subscribe(Self.owner) { [weak self] update in
             self?.receive(update)

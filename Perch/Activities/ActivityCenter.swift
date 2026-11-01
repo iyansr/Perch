@@ -144,13 +144,23 @@ struct TimerRun: Equatable {
     var isLastPhase: Bool { phaseIndex == plan.phases.count - 1 }
 }
 
-/// A question the activity's card answers with two buttons (Deny / Allow).
+/// A question the activity's card answers with two buttons (Deny / Allow), or with one button per choice when
+/// `choices` is set (an agent's `AskUserQuestion`; decline then hands the question back to the terminal).
 /// `owner` picks the handler in `DecisionRouter`; `id` identifies the question to that owner.
 struct PendingDecision: Equatable {
     let id: String
     var owner = "agent"
     var declineTitle = "Deny"
     var acceptTitle = "Allow"
+    var choices: [String] = []
+}
+
+/// What a decision card's button said.
+enum DecisionAnswer: Equatable {
+    case decline
+    case accept
+    /// One of `PendingDecision.choices`.
+    case choice(String)
 }
 
 /// A link the card offers as its main action ("Join").
@@ -172,9 +182,9 @@ struct ActivityAction: Equatable, Identifiable {
 final class DecisionRouter {
     static let shared = DecisionRouter()
 
-    private var handlers: [String: (_ id: String, _ accepted: Bool) -> Void] = [:]
+    private var handlers: [String: (_ id: String, _ answer: DecisionAnswer) -> Void] = [:]
 
-    func register(owner: String, _ handler: @escaping (_ id: String, _ accepted: Bool) -> Void) {
+    func register(owner: String, _ handler: @escaping (_ id: String, _ answer: DecisionAnswer) -> Void) {
         handlers[owner] = handler
     }
 
@@ -183,7 +193,11 @@ final class DecisionRouter {
     }
 
     func answer(_ decision: PendingDecision, accepted: Bool) {
-        handlers[decision.owner]?(decision.id, accepted)
+        answer(decision, accepted ? .accept : .decline)
+    }
+
+    func answer(_ decision: PendingDecision, _ answer: DecisionAnswer) {
+        handlers[decision.owner]?(decision.id, answer)
     }
 }
 

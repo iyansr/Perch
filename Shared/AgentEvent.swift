@@ -29,6 +29,30 @@ nonisolated struct AgentTerminal: Codable, Equatable, Sendable {
     var pid: Int32?
 }
 
+/// An `AskUserQuestion` call Perch can answer with one tap: a single, single-select question.
+/// Anything else (several questions, multi-select) stays in the terminal.
+nonisolated struct AgentQuestion: Codable, Equatable, Sendable {
+    var question: String
+    var header: String?
+    /// Option labels, in the agent's order. The answer is one of them, verbatim.
+    var options: [String]
+
+    static let toolName = "AskUserQuestion"
+
+    /// The question in an `AskUserQuestion` hook payload; nil for any other tool or a shape Perch cannot answer.
+    static func from(payload object: [String: Any]) -> AgentQuestion? {
+        guard object["tool_name"] as? String == toolName,
+              let questions = (object["tool_input"] as? [String: Any])?["questions"] as? [[String: Any]],
+              questions.count == 1, let first = questions.first,
+              let text = first["question"] as? String, !text.isEmpty,
+              first["multiSelect"] as? Bool != true
+        else { return nil }
+        let options = (first["options"] as? [[String: Any]] ?? []).compactMap { $0["label"] as? String }
+        guard !options.isEmpty else { return nil }
+        return AgentQuestion(question: text, header: first["header"] as? String, options: options)
+    }
+}
+
 nonisolated struct AgentEvent: Codable, Equatable, Sendable {
     static let currentVersion = 1
     static let maxMessageLength = 160
@@ -51,9 +75,11 @@ nonisolated struct AgentEvent: Codable, Equatable, Sendable {
     var duration: Double?
     /// `perch event --await` only: the sender keeps the connection open and waits for an `AgentReply` with this id.
     var request: String?
+    /// `permission_request` for `AskUserQuestion` only: the question and its options, so Perch can answer it.
+    var question: AgentQuestion?
 
     enum CodingKeys: String, CodingKey {
-        case v, source, type, session, cwd, message, term, ts, request
+        case v, source, type, session, cwd, message, term, ts, request, question
         case exitCode = "exit_code"
         case duration
     }
@@ -89,8 +115,18 @@ nonisolated struct AgentEvent: Codable, Equatable, Sendable {
             cwd: object["cwd"] as? String,
             message: summary(type: type, payload: object).map(condense),
             term: term,
-            ts: now.timeIntervalSince1970
+            ts: now.timeIntervalSince1970,
+            question: type == "permission_request" ? AgentQuestion.from(payload: object) : nil
         )
+    }
+
+    /// False for a `PermissionRequest` Perch cannot answer: an `AskUserQuestion` that is not a single, single-select
+    /// question. Its hook does not wait, so the terminal handles it; Perch only shows that the agent is asking.
+    static func isAnswerable(_ payload: Data) -> Bool {
+        guard let object = try? JSONSerialization.jsonObject(with: payload) as? [String: Any],
+              object["tool_name"] as? String == AgentQuestion.toolName
+        else { return true }
+        return AgentQuestion.from(payload: object) != nil
     }
 
     /// `PermissionRequest` → `permission_request`; snake_case input is returned unchanged.
@@ -111,6 +147,10 @@ nonisolated struct AgentEvent: Codable, Equatable, Sendable {
         switch type {
         case "permission_request":
             guard let tool else { return "Needs permission" }
+            if tool == AgentQuestion.toolName {
+                let questions = input?["questions"] as? [[String: Any]]
+                return questions?.first?["question"] as? String ?? "Has a question"
+            }
             return subject.map { "Allow \(tool): \($0)?" } ?? "Allow \(tool)?"
         case "post_tool_use":
             guard let tool else { return nil }
@@ -148,6 +188,8 @@ nonisolated struct AgentReply: Codable, Equatable, Sendable {
     var v = AgentEvent.currentVersion
     var request: String
     var allow: Bool
+    /// The option the user picked for an `AskUserQuestion` request (`allow` is then true).
+    var answer: String?
 
     /// One line of the wire format, newline included.
     func encodedLine() -> Data? {
@@ -158,7 +200,31 @@ nonisolated struct AgentReply: Codable, Equatable, Sendable {
         return data
     }
 
-    /// What the hook prints so the agent takes the answer: a `PermissionRequest` decision.
+    /// What the hook prints for the request made from `payload` (the hook's stdin); nil prints nothing, so the
+    /// agent asks in its terminal.
+    /// `AskUserQuestion` and `ExitPlanMode` ignore a bare allow: they need `updatedInput`, which replaces the whole
+    /// input, so it is the original `tool_input` verbatim, plus `answers` (question text → picked label) for a question.
+    func hookOutput(for payload: Data) -> String? {
+        let object = (try? JSONSerialization.jsonObject(with: payload)) as? [String: Any]
+        let tool = object?["tool_name"] as? String
+        guard allow, tool == AgentQuestion.toolName || tool == "ExitPlanMode" else { return hookOutput }
+        guard var input = object?["tool_input"] as? [String: Any] else { return nil }
+        if tool == AgentQuestion.toolName {
+            guard let answer, let question = object.flatMap(AgentQuestion.from(payload:)),
+                  question.options.contains(answer)
+            else { return nil }
+            input["answers"] = [question.question: answer]
+        }
+        let output: [String: Any] = ["hookSpecificOutput": [
+            "hookEventName": "PermissionRequest",
+            "decision": ["behavior": "allow", "updatedInput": input],
+        ]]
+        guard let data = try? JSONSerialization.data(withJSONObject: output, options: [.sortedKeys, .withoutEscapingSlashes])
+        else { return nil }
+        return String(decoding: data, as: UTF8.self) + "\n"
+    }
+
+    /// A plain `PermissionRequest` decision.
     /// Deny never sets `interrupt`, so the agent carries on and may try something else.
     var hookOutput: String {
         let decision = allow ? #"{"behavior": "allow"}"# : #"{"behavior": "deny", "message": "Denied from Perch"}"#

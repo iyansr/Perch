@@ -15,6 +15,15 @@ final class AgentSessions {
         case ignore
     }
 
+    /// What goes back to the helper waiting on a request.
+    enum Response: Equatable {
+        case allow, deny
+        /// The option picked for an `AskUserQuestion`.
+        case answer(String)
+        /// Close the request unanswered: the agent asks in its terminal.
+        case handBack
+    }
+
     private struct Session {
         let activityID: UUID
         var lastSeen: Date
@@ -22,19 +31,21 @@ final class AgentSessions {
         var request: String?
         /// What the row shows, kept to flip its status after an answer.
         var event: AgentEvent?
+        /// The `AskUserQuestion` behind `request`, when it is one.
+        var question: AgentQuestion?
     }
 
     private let activities: ActivityCenter
     private let now: () -> Date
-    /// Delivers an Allow / Deny to the helper waiting on a request (`AgentBridge.reply`).
-    var reply: (_ request: String, _ allow: Bool) -> Void
+    /// Delivers the answer to the helper waiting on a request (`AgentBridge.reply` / `release`).
+    var reply: (_ request: String, _ response: Response) -> Void
     private var sessions: [String: Session] = [:]
     private var pruneTimer: Timer?
 
     init(
         activities: ActivityCenter,
         now: @escaping () -> Date = Date.init,
-        reply: @escaping (_ request: String, _ allow: Bool) -> Void = { _, _ in }
+        reply: @escaping (_ request: String, _ response: Response) -> Void = { _, _ in }
     ) {
         self.activities = activities
         self.now = now
@@ -96,6 +107,7 @@ final class AgentSessions {
         if session.request != nil {
             activities.setDecision(session.activityID, nil)
             session.request = nil
+            session.question = nil
         }
         sessions[key] = session
 
@@ -105,18 +117,49 @@ final class AgentSessions {
         show(session, status: status)
         if event.type == "permission_request", let request = event.request {
             sessions[key]?.request = request
-            activities.setDecision(session.activityID, PendingDecision(id: request))
+            sessions[key]?.question = event.question
+            var decision = PendingDecision(id: request)
+            if let question = event.question {
+                decision.choices = question.options
+                decision.declineTitle = "Terminal"
+            }
+            activities.setDecision(session.activityID, decision)
         }
     }
 
     /// The Allow / Deny card for `request` was answered: tell the waiting helper, drop the buttons and show the
     /// agent working again. Unknown or already-cleared requests do nothing.
     func answer(request: String, allow: Bool) {
+        answer(request: request, allow ? .accept : .decline)
+    }
+
+    /// For a question: a choice answers it; decline hands it back to the terminal (the row keeps asking there);
+    /// a bare accept answers nothing, so it is ignored.
+    func answer(request: String, _ answer: DecisionAnswer) {
         guard let (key, session) = sessions.first(where: { $0.value.request == request }) else { return }
+        let response: Response
+        let detail: String?
+        switch (answer, session.question) {
+        case let (.choice(option), question?) where question.options.contains(option):
+            response = .answer(option)
+            detail = "Answered from Perch: \(option)"
+        case (.decline, _?):
+            response = .handBack
+            detail = nil
+        case (.accept, nil):
+            response = .allow
+            detail = "Allowed from Perch"
+        case (.decline, nil):
+            response = .deny
+            detail = "Denied from Perch"
+        default:
+            return
+        }
         sessions[key]?.request = nil
-        reply(request, allow)
+        sessions[key]?.question = nil
+        reply(request, response)
         activities.setDecision(session.activityID, nil)
-        show(session, status: .running, detail: allow ? "Allowed from Perch" : "Denied from Perch")
+        if let detail { show(session, status: .running, detail: AgentEvent.condense(detail)) }
     }
 
     /// The helper waiting on `request` disconnected without an answer (its timeout, or the agent was answered in
@@ -124,6 +167,7 @@ final class AgentSessions {
     func requestEnded(_ request: String) {
         guard let (key, session) = sessions.first(where: { $0.value.request == request }) else { return }
         sessions[key]?.request = nil
+        sessions[key]?.question = nil
         activities.setDecision(session.activityID, nil)
     }
 

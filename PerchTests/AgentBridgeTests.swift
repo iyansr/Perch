@@ -12,6 +12,22 @@ private func fixture(_ name: String) throws -> Data {
 
 private let terminal = AgentTerminal(program: "Apple_Terminal", bundle: nil, tty: "/dev/ttys004", pid: 42)
 
+/// A Claude Code `PermissionRequest` for `AskUserQuestion`, shaped like the tool input Claude sends.
+private func askPayload(
+    question: String = #"Run "ls" now?"#, options: [String] = ["Approve (Recommended)", "Deny"],
+    multiSelect: Bool = false, count: Int = 1
+) throws -> Data {
+    let one: [String: Any] = [
+        "question": question, "header": "Approve", "multiSelect": multiSelect,
+        "options": options.map { ["label": $0, "description": "about \($0)"] },
+    ]
+    return try JSONSerialization.data(withJSONObject: [
+        "session_id": "s1", "cwd": "/tmp/x", "hook_event_name": "PermissionRequest", "permission_mode": "default",
+        "tool_name": "AskUserQuestion",
+        "tool_input": ["questions": Array(repeating: one, count: count)],
+    ])
+}
+
 struct AgentEventTests {
     @Test func claudePermissionRequestBecomesAShortQuestion() throws {
         let event = try #require(AgentEvent.fromHook(try fixture("claude-PermissionRequest"), source: .claude, term: terminal))
@@ -67,6 +83,65 @@ struct AgentEventTests {
         #expect(AgentSessions.transition(for: event("pre_compact")) == .ignore)
     }
 
+    @Test func askUserQuestionCarriesItsOptions() throws {
+        let event = try #require(AgentEvent.fromHook(try askPayload(), source: .claude, term: nil))
+        #expect(event.message == #"Run "ls" now?"#)
+        #expect(event.question == AgentQuestion(question: #"Run "ls" now?"#, header: "Approve",
+                                                options: ["Approve (Recommended)", "Deny"]))
+        let line = try #require(event.encodedLine())
+        #expect(try JSONDecoder().decode(AgentEvent.self, from: line).question == event.question)
+        #expect(AgentEvent.isAnswerable(try askPayload()))
+    }
+
+    @Test func questionsPerchCannotAnswerStayInTheTerminal() throws {
+        for payload in [try askPayload(multiSelect: true), try askPayload(count: 2), try askPayload(options: [])] {
+            let event = try #require(AgentEvent.fromHook(payload, source: .claude, term: nil))
+            #expect(event.question == nil)
+            #expect(event.message == #"Run "ls" now?"#)
+            #expect(!AgentEvent.isAnswerable(payload))
+        }
+        #expect(AgentEvent.isAnswerable(try fixture("claude-PermissionRequest")))
+        #expect(AgentEvent.fromHook(try fixture("claude-PermissionRequest"), source: .claude, term: nil)?.question == nil)
+    }
+
+    @Test func answeringAQuestionEchoesItsInputWithTheAnswer() throws {
+        let payload = try askPayload()
+        let output = try #require(AgentReply(request: "r", allow: true, answer: "Approve (Recommended)").hookOutput(for: payload))
+        #expect(output.hasSuffix("\n"))
+        let root = try #require(try JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any])
+        let specific = try #require(root["hookSpecificOutput"] as? [String: Any])
+        #expect(specific["hookEventName"] as? String == "PermissionRequest")
+        let decision = try #require(specific["decision"] as? [String: Any])
+        #expect(decision["behavior"] as? String == "allow")
+        let updated = try #require(decision["updatedInput"] as? [String: Any])
+        #expect(updated["answers"] as? [String: String] == [#"Run "ls" now?"#: "Approve (Recommended)"])
+        // The original questions go back untouched: updatedInput replaces the whole input.
+        let original = try #require(try JSONSerialization.jsonObject(with: payload) as? [String: Any])
+        let questions = try #require((original["tool_input"] as? [String: Any])?["questions"])
+        #expect(NSDictionary(dictionary: ["q": questions]).isEqual(to: ["q": updated["questions"] as Any]))
+    }
+
+    @Test func aQuestionIsNeverAnsweredWithABareAllow() throws {
+        let payload = try askPayload()
+        #expect(AgentReply(request: "r", allow: true).hookOutput(for: payload) == nil)
+        #expect(AgentReply(request: "r", allow: true, answer: "Maybe").hookOutput(for: payload) == nil)
+        // Other tools keep the plain decision, byte for byte.
+        let bash = try fixture("claude-PermissionRequest")
+        #expect(AgentReply(request: "r", allow: true).hookOutput(for: bash) == AgentReply(request: "r", allow: true).hookOutput)
+        #expect(AgentReply(request: "r", allow: false).hookOutput(for: bash) == AgentReply(request: "r", allow: false).hookOutput)
+    }
+
+    @Test func approvingAPlanEchoesItsInput() throws {
+        let payload = try JSONSerialization.data(withJSONObject: [
+            "hook_event_name": "PermissionRequest", "session_id": "s", "tool_name": "ExitPlanMode",
+            "tool_input": ["plan": "## Do it", "planFilePath": "/tmp/plan.md"],
+        ])
+        let output = try #require(AgentReply(request: "r", allow: true).hookOutput(for: payload))
+        let root = try #require(try JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any])
+        let decision = (root["hookSpecificOutput"] as? [String: Any])?["decision"] as? [String: Any]
+        #expect(decision?["updatedInput"] as? [String: String] == ["plan": "## Do it", "planFilePath": "/tmp/plan.md"])
+    }
+
     @Test func eventNamesNormaliseToSnakeCase() {
         #expect(AgentEvent.snakeCase("PermissionRequest") == "permission_request")
         #expect(AgentEvent.snakeCase("permission_request") == "permission_request")
@@ -101,7 +176,14 @@ struct AgentSessionsTests {
     /// Replies the sessions sent to the bridge.
     private final class Answers {
         var all: [String] = []
-        func record(_ request: String, _ allow: Bool) { all.append("\(request):\(allow ? "allow" : "deny")") }
+        func record(_ request: String, _ response: AgentSessions.Response) {
+            switch response {
+            case .allow: all.append("\(request):allow")
+            case .deny: all.append("\(request):deny")
+            case let .answer(option): all.append("\(request):answer=\(option)")
+            case .handBack: all.append("\(request):handBack")
+            }
+        }
     }
 
     private func awaitingSetup() -> (ActivityCenter, AgentSessions, Answers) {
@@ -180,6 +262,48 @@ struct AgentSessionsTests {
         #expect(answers.all.isEmpty)
         sessions.answer(request: "r2", allow: true)
         #expect(answers.all == ["r2:allow"])
+    }
+
+    private func questionSetup() throws -> (ActivityCenter, AgentSessions, Answers) {
+        let center = ActivityCenter()
+        let answers = Answers()
+        let sessions = AgentSessions(activities: center, reply: answers.record)
+        var asking = try #require(AgentEvent.fromHook(try askPayload(), source: .claude, term: terminal))
+        asking.request = "q1"
+        sessions.handle(asking)
+        return (center, sessions, answers)
+    }
+
+    @Test func aQuestionShowsItsOptions() throws {
+        let (center, _, _) = try questionSetup()
+        let decision = try #require(center.items.first?.decision)
+        #expect(decision.choices == ["Approve (Recommended)", "Deny"])
+        #expect(center.items[0].status == .needsAttention)
+    }
+
+    @Test func pickingAnOptionAnswersTheQuestion() throws {
+        let (center, sessions, answers) = try questionSetup()
+        sessions.answer(request: "q1", .choice("Deny"))
+        #expect(answers.all == ["q1:answer=Deny"])
+        #expect(center.items[0].decision == nil)
+        #expect(center.items[0].status == .running)
+        #expect(center.items[0].detail == "Answered from Perch: Deny")
+    }
+
+    @Test func decliningAQuestionHandsItBackToTheTerminal() throws {
+        let (center, sessions, answers) = try questionSetup()
+        sessions.answer(request: "q1", .decline)
+        #expect(answers.all == ["q1:handBack"])
+        #expect(center.items[0].decision == nil)
+        #expect(center.items[0].status == .needsAttention)
+    }
+
+    @Test func aQuestionIgnoresAllowAndUnknownOptions() throws {
+        let (center, sessions, answers) = try questionSetup()
+        sessions.answer(request: "q1", allow: true)
+        sessions.answer(request: "q1", .choice("Something else"))
+        #expect(answers.all.isEmpty)
+        #expect(center.items[0].decision != nil)
     }
 
     @Test func otherSessionsKeepTheirButtons() {
@@ -345,6 +469,45 @@ struct PerchCLITests {
         #expect(result.status == 0)
         #expect(result.stdout == (try fixture("claude-PermissionRequest-reply")))
         #expect(result.elapsed < 5)
+    }
+
+    @Test func awaitingHookAnswersAQuestionWithThePickedOption() async throws {
+        let socket = socketPath()
+        let received = Received()
+        let bridge = AgentBridge(socketURL: socket) { received.append($0) }
+        try bridge.start()
+        defer { bridge.stop() }
+
+        let payload = try askPayload()
+        let cli = Task.detached {
+            try runPerch(["event", "--source", "claude", "--await"], stdin: payload, socket: socket,
+                         environment: [AgentReply.awaitEnvironmentKey: "10"])
+        }
+        let event = try #require(try await received.wait(count: 1).first)
+        #expect(event.question?.options == ["Approve (Recommended)", "Deny"])
+        bridge.reply(request: try #require(event.request), allow: true, answer: "Approve (Recommended)")
+
+        let result = try await cli.value
+        #expect(result.status == 0)
+        let expected = try #require(AgentReply(request: "x", allow: true, answer: "Approve (Recommended)").hookOutput(for: payload))
+        #expect(String(decoding: result.stdout, as: UTF8.self) == expected)
+    }
+
+    @Test func awaitingHookDoesNotWaitOnAQuestionPerchCannotAnswer() async throws {
+        let socket = socketPath()
+        let received = Received()
+        let bridge = AgentBridge(socketURL: socket) { received.append($0) }
+        try bridge.start()
+        defer { bridge.stop() }
+
+        let result = try runPerch(["event", "--source", "claude", "--await"], stdin: try askPayload(count: 2),
+                                  socket: socket, environment: [AgentReply.awaitEnvironmentKey: "10"])
+        #expect(result.status == 0)
+        #expect(result.stdout.isEmpty)
+        #expect(result.elapsed < 1)
+        let event = try #require(try await received.wait(count: 1).first)
+        #expect(event.request == nil)
+        #expect(event.type == "permission_request")
     }
 
     @Test func awaitingHookPrintsTheDenyDecisionWithoutInterrupt() async throws {
@@ -518,6 +681,29 @@ struct AgentBridgeRequestTests {
         #expect(try JSONDecoder().decode(AgentReply.self, from: readAll(from: first)) == AgentReply(request: "one", allow: true))
 
         // Answered requests are not "ended".
+        #expect(try await ended.wait(count: 1, timeout: 0.2).isEmpty)
+    }
+
+    @Test func replyCarriesTheAnswerAndReleaseClosesWithoutOne() async throws {
+        let socket = socketPath()
+        let received = Collector<AgentEvent>()
+        let ended = Collector<String>()
+        let bridge = AgentBridge(socketURL: socket, onRequestEnded: { ended.append($0) }) { received.append($0) }
+        try bridge.start()
+        defer { bridge.stop() }
+
+        let first = try connect(to: socket)
+        let second = try connect(to: socket)
+        defer { close(first); close(second) }
+        try send(permissionRequest("one"), on: first)
+        try send(permissionRequest("two"), on: second)
+        #expect(try await received.wait(count: 2).count == 2)
+
+        bridge.reply(request: "one", allow: true, answer: "Yes")
+        #expect(try JSONDecoder().decode(AgentReply.self, from: readAll(from: first))
+            == AgentReply(request: "one", allow: true, answer: "Yes"))
+        bridge.release(request: "two")
+        #expect(readAll(from: second).isEmpty) // EOF, no line
         #expect(try await ended.wait(count: 1, timeout: 0.2).isEmpty)
     }
 
