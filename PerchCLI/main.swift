@@ -44,12 +44,14 @@ private func runEvent(_ arguments: [String]) -> Never {
           var event = AgentEvent.fromHook(payload, source: source, term: currentTerminal())
     else { exit(0) }
 
-    let awaiting = arguments.contains("--await")
+    // A question Perch cannot answer (several questions, multi-select) is left to the terminal without waiting.
+    let awaiting = arguments.contains("--await") && AgentEvent.isAnswerable(payload)
     if awaiting { event.request = UUID().uuidString }
     guard let line = event.encodedLine(), let descriptor = connectAndSend(line) else { exit(0) }
     defer { close(descriptor) }
-    if let request = event.request, let reply = awaitReply(on: descriptor, request: request) {
-        FileHandle.standardOutput.write(Data(reply.hookOutput.utf8))
+    if let request = event.request, let reply = awaitReply(on: descriptor, request: request),
+       let output = reply.hookOutput(for: payload) {
+        FileHandle.standardOutput.write(Data(output.utf8))
     }
     exit(0)
 }

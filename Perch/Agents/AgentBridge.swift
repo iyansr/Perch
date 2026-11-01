@@ -65,11 +65,22 @@ nonisolated final class AgentBridge: @unchecked Sendable {
 
     /// Answers the client waiting on `request` and closes its connection. Does nothing when that client is
     /// already gone (the caller learns that through `onRequestEnded`).
-    func reply(request: String, allow: Bool) {
+    /// `answer`: the option picked for an `AskUserQuestion` request.
+    func reply(request: String, allow: Bool, answer: String? = nil) {
         queue.async { [self] in
             guard let client = requests.removeValue(forKey: request) else { return }
             clients[client]?.request = nil
-            if let line = AgentReply(request: request, allow: allow).encodedLine() { write(line, to: client) }
+            if let line = AgentReply(request: request, allow: allow, answer: answer).encodedLine() { write(line, to: client) }
+            disconnect(client)
+        }
+    }
+
+    /// Closes the client waiting on `request` without an answer: the hook prints nothing and the agent asks in its
+    /// terminal. Does not report `onRequestEnded`; the caller already knows.
+    func release(request: String) {
+        queue.async { [self] in
+            guard let client = requests.removeValue(forKey: request) else { return }
+            clients[client]?.request = nil
             disconnect(client)
         }
     }

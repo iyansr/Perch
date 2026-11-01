@@ -85,9 +85,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 DispatchQueue.main.async { sessions.handle(event) }
             }
         )
-        // Allow / Deny on a permission card: sessions flip the row, the bridge answers the waiting `perch event --await`.
-        sessions.reply = { request, allow in bridge.reply(request: request, allow: allow) }
-        DecisionRouter.shared.register(owner: "agent") { id, accepted in sessions.answer(request: id, allow: accepted) }
+        // A permission card's answer: sessions flip the row, the bridge answers the waiting `perch event --await`.
+        sessions.reply = { request, response in
+            switch response {
+            case .allow: bridge.reply(request: request, allow: true)
+            case .deny: bridge.reply(request: request, allow: false)
+            case let .answer(option): bridge.reply(request: request, allow: true, answer: option)
+            case .handBack: bridge.release(request: request)
+            }
+        }
+        DecisionRouter.shared.register(owner: "agent") { id, answer in sessions.answer(request: id, answer) }
         do {
             try bridge.start()
         } catch {

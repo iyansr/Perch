@@ -214,15 +214,34 @@ struct DecisionCard: View {
                 if case .airdrop = activity.kind, let file = activity.image {
                     ActivityImage(image: file, badge: nil, size: 34)
                 }
+                if !decision.choices.isEmpty {
+                    CircleButton(symbol: "xmark") { DecisionRouter.shared.answer(decision, .decline) }
+                        .help("Answer in terminal")
+                }
             }
-            HStack(spacing: 8) {
-                Button(decision.declineTitle) { DecisionRouter.shared.answer(decision, accepted: false) }
-                    .buttonStyle(DecisionButtonStyle(fill: .white.opacity(0.14), text: .white))
-                Button(decision.acceptTitle) { DecisionRouter.shared.answer(decision, accepted: true) }
-                    // AirDrop's own banner accepts in blue; an agent's Allow stays neutral white.
-                    .buttonStyle(decision.owner == "airdrop"
-                        ? DecisionButtonStyle(fill: .blue, text: .white)
-                        : DecisionButtonStyle(fill: .white, text: .black))
+            if decision.choices.isEmpty {
+                HStack(spacing: 8) {
+                    Button(decision.declineTitle) { DecisionRouter.shared.answer(decision, accepted: false) }
+                        .buttonStyle(DecisionButtonStyle(fill: .white.opacity(0.14), text: .white))
+                    Button(decision.acceptTitle) { DecisionRouter.shared.answer(decision, accepted: true) }
+                        // AirDrop's own banner accepts in blue; an agent's Allow stays neutral white.
+                        .buttonStyle(decision.owner == "airdrop"
+                            ? DecisionButtonStyle(fill: .blue, text: .white)
+                            : DecisionButtonStyle(fill: .white, text: .black))
+                }
+            } else {
+                // An agent's question: one button per option, in the agent's order (its pick first).
+                HStack(spacing: 8) {
+                    ForEach(Array(decision.choices.enumerated()), id: \.offset) { index, choice in
+                        Button { DecisionRouter.shared.answer(decision, .choice(choice)) } label: {
+                            Text(choice).lineLimit(1).truncationMode(.tail).padding(.horizontal, 6)
+                        }
+                        .buttonStyle(index == 0
+                            ? DecisionButtonStyle(fill: .white, text: .black)
+                            : DecisionButtonStyle(fill: .white.opacity(0.14), text: .white))
+                        .help(choice)
+                    }
+                }
             }
         }
         .padding(.horizontal, 18)
@@ -426,11 +445,31 @@ struct GlanceRow: View {
     @ViewBuilder
     private var actions: some View {
         HStack(spacing: 6) {
-            if let decision = activity.decision {
+            if let decision = activity.decision, decision.choices.isEmpty {
                 CircleButton(symbol: "xmark") { DecisionRouter.shared.answer(decision, accepted: false) }
                     .help(decision.declineTitle)
                 CircleButton(symbol: "checkmark") { DecisionRouter.shared.answer(decision, accepted: true) }
                     .help(decision.acceptTitle)
+            } else if let decision = activity.decision {
+                // A question never gets a bare checkmark: Allow alone answers nothing.
+                Menu {
+                    ForEach(decision.choices, id: \.self) { choice in
+                        Button(choice) { DecisionRouter.shared.answer(decision, .choice(choice)) }
+                    }
+                    Divider()
+                    Button("Answer in Terminal") { DecisionRouter.shared.answer(decision, .decline) }
+                } label: {
+                    Image(systemName: "list.bullet")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 26, height: 26)
+                        .background(Circle().fill(.white.opacity(0.14)))
+                }
+                .menuStyle(.button)
+                .buttonStyle(.plain)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("Answer")
             }
             if activity.status == .running {
                 switch activity.progress {

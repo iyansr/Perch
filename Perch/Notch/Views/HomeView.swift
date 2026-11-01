@@ -313,7 +313,7 @@ private struct AgentRow: View {
     }
 }
 
-/// The pending permission request: what the agent wants to run, then Deny / Allow.
+/// The pending permission request: what the agent wants to run, then Deny / Allow (or its question's options).
 private struct DecisionBox: View {
     let agent: Activity
     let decision: PendingDecision
@@ -326,10 +326,23 @@ private struct DecisionBox: View {
                 .lineLimit(2)
             HStack(spacing: 6) {
                 Spacer(minLength: 0)
-                Button(decision.declineTitle) { DecisionRouter.shared.answer(decision, accepted: false) }
-                    .buttonStyle(ChipButtonStyle())
-                Button(decision.acceptTitle) { DecisionRouter.shared.answer(decision, accepted: true) }
-                    .buttonStyle(ChipButtonStyle(fill: .white, text: .black))
+                if decision.choices.isEmpty {
+                    Button(decision.declineTitle) { DecisionRouter.shared.answer(decision, accepted: false) }
+                        .buttonStyle(ChipButtonStyle())
+                    Button(decision.acceptTitle) { DecisionRouter.shared.answer(decision, accepted: true) }
+                        .buttonStyle(ChipButtonStyle(fill: .white, text: .black))
+                } else {
+                    Button(decision.declineTitle) { DecisionRouter.shared.answer(decision, .decline) }
+                        .buttonStyle(ChipButtonStyle())
+                        .help("Answer in terminal")
+                    ForEach(Array(decision.choices.enumerated()), id: \.offset) { index, choice in
+                        Button { DecisionRouter.shared.answer(decision, .choice(choice)) } label: {
+                            Text(choice).lineLimit(1).truncationMode(.tail)
+                        }
+                        .buttonStyle(index == 0 ? ChipButtonStyle(fill: .white, text: .black) : ChipButtonStyle())
+                        .help(choice)
+                    }
+                }
             }
         }
         .padding(8)
