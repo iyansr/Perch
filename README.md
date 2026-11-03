@@ -30,6 +30,7 @@ SwiftUI and AppKit. On a notched MacBook the black shape grows out of the hardwa
 - **Drop to convert**: drag an image toward the notch and convert or resize it in one step.
 - **Live activities**: one shared slot in the pill for timers, media, weather, calls (Meet and Zoom), notifications, AirDrop and dictation.
 - **Coding agents**: Claude Code and Codex report progress and permission requests to the notch through the `perch` CLI.
+- **Dev servers**: every local server you started, with its port, framework and project folder. Open it in the browser or stop it, from the Home dock.
 - **Two screen modes**: notch on the built-in display, floating island on external displays. Switches live when you open or close the lid.
 
 ## Install

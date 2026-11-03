@@ -102,6 +102,7 @@ final class NotchController {
             switch command {
             case .clipboardHistory: toggle(mode: .clipboard)
             case .searchFiles: toggle(mode: .files)
+            case .devServers: toggle(page: .servers)
             case .settings: openSettings()
             case .quit: NSApp.terminate(nil)
             }
@@ -120,6 +121,24 @@ final class NotchController {
             focusSearchField()
         case .idle, .glance, .home:
             open(mode: mode)
+        case .onboarding, .dropZone:
+            break
+        }
+    }
+
+    /// Opens Home straight on `page` (from search too), and closes it when the shortcut finds it already showing.
+    private func toggle(page: HomePage) {
+        switch model.state {
+        case .home where model.homePage == page:
+            close()
+        case .home:
+            showHomePage(page)
+        case .open:
+            returnHome()
+            model.homePage = page
+        case .idle, .glance:
+            openHome()
+            model.homePage = page
         case .onboarding, .dropZone:
             break
         }
@@ -326,6 +345,8 @@ final class NotchController {
             model.push(.clipboard)
         case .searchFiles:
             model.push(.files)
+        case .devServers:
+            toggle(page: .servers)
         case .settings:
             openSettings()
         case .quit:

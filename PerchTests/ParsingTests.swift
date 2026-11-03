@@ -87,6 +87,7 @@ struct PerchCommandTests {
         #expect(PerchCommand.matches("clip").first == .clipboardHistory)
         #expect(PerchCommand.matches("preferences").first == .settings)
         #expect(PerchCommand.matches("exit").first == .quit)
+        #expect(PerchCommand.matches("ports").first == .devServers)
     }
 
     @Test func exactTitleOutranksFuzzyMatches() {

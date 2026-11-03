@@ -32,18 +32,22 @@ struct HomeView: View {
                 ConvertModule(center: model.activities)
                     .homePage(.convert, model: model, top: top)
                     .transition(.homeTab)
+            case .servers:
+                DevServersPage(controller: controller)
+                    .homePage(.servers, model: model, top: top)
+                    .transition(.homeTab)
             case .activity:
                 HomeActivityPage(model: model, controller: controller)
                     .homePage(.activity, model: model, top: top)
                     .transition(.homeDetail)
             }
         }
-        .frame(width: NotchGeometry.panelWidth)
+        .frame(width: NotchGeometry.homeWidth)
         .padding(.top, notch ? model.geometry.notchSize.height : 0)
         .frame(maxHeight: .infinity, alignment: .top)
         .overlay(alignment: .top) {
             HomeBar(controller: controller)
-                .frame(width: NotchGeometry.panelWidth, height: barHeight)
+                .frame(width: NotchGeometry.homeWidth, height: barHeight)
         }
     }
 }
@@ -193,7 +197,7 @@ private struct HomeLanding: View {
             ActivityStrip(model: model, controller: controller)
             HStack(alignment: .top, spacing: 8) {
                 AgentsTile(center: center, controller: controller)
-                    .frame(width: 236)
+                    .frame(width: 290)
                 VStack(spacing: 8) {
                     if let media { MusicTile(media: media) } else { IdleMusicTile() }
                     MeetingTile(meeting: meeting)
@@ -855,6 +859,155 @@ private struct ConvertModule: View {
             }
             Label("Drag files onto the notch", systemImage: "arrow.down.doc").moduleNote()
         }
+    }
+}
+
+// MARK: - Dev Servers
+
+/// Local servers the user started (port, framework, project); open one in the browser or stop it.
+/// Rescans every two seconds while the page is showing.
+private struct DevServersPage: View {
+    let controller: NotchController
+    @State private var confirming: pid_t?
+    private static let visibleRows = 5
+    private static let rowHeight: CGFloat = 40
+
+    var body: some View {
+        let monitor = DevServerMonitor.shared
+        let servers = monitor.servers
+        ModuleCard(minHeight: 0) {
+            HStack(spacing: 6) {
+                ModuleHeader(title: "Dev Servers")
+                if !servers.isEmpty {
+                    Text("\(servers.count) running")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.green)
+                        .fixedSize()
+                }
+            }
+            if servers.isEmpty {
+                Text(monitor.hasScanned ? "No dev servers running" : "Looking for servers…")
+                    .font(.system(size: 13, weight: .semibold))
+                    .padding(.top, 8)
+                Text("Servers you start on localhost show up here").moduleNote()
+            } else {
+                ScrollView(.vertical) {
+                    VStack(spacing: 0) {
+                        ForEach(servers) { server in
+                            DevServerRow(
+                                server: server,
+                                isConfirming: confirming == server.pid,
+                                isStopping: monitor.stopping.contains(server.pid),
+                                open: { open(server) },
+                                askToStop: { withAnimation(.easeOut(duration: 0.15)) { confirming = server.pid } },
+                                cancel: { withAnimation(.easeOut(duration: 0.15)) { confirming = nil } },
+                                stop: { stop(server) }
+                            )
+                            .frame(height: Self.rowHeight)
+                        }
+                    }
+                }
+                .scrollIndicators(.never)
+                .frame(height: CGFloat(min(servers.count, Self.visibleRows)) * Self.rowHeight)
+                .padding(.top, 4)
+                .padding(.horizontal, -6)
+            }
+        }
+        .task {
+            while !Task.isCancelled {
+                await monitor.refresh()
+                if let confirming, !monitor.servers.contains(where: { $0.pid == confirming }) { self.confirming = nil }
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
+    }
+
+    private func open(_ server: DevServer) {
+        guard let url = server.url else { return }
+        NSWorkspace.shared.open(url)
+        controller.close(restoreFocus: false)
+    }
+
+    private func stop(_ server: DevServer) {
+        confirming = nil
+        Task { await DevServerMonitor.shared.stop(server) }
+    }
+}
+
+/// "Next.js · perch-web", ":3000 · pid 812"; open and stop on the right. Stop asks first, inline.
+private struct DevServerRow: View {
+    let server: DevServer
+    let isConfirming: Bool
+    let isStopping: Bool
+    let open: () -> Void
+    let askToStop: () -> Void
+    let cancel: () -> Void
+    let stop: () -> Void
+    @State private var isHovering = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: server.kind.isWeb ? "globe" : "cylinder.split.1x2")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(isConfirming ? Color.red : .green)
+                .frame(width: 24, height: 24)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill((isConfirming ? Color.red : .green).opacity(0.18))
+                )
+            VStack(alignment: .leading, spacing: 1) {
+                if isConfirming {
+                    Text("Stop \(server.kind.name) on :\(String(server.port))?")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text("Ends process \(String(server.pid))")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.4))
+                } else {
+                    Text(title)
+                        .font(.system(size: 12, weight: .semibold))
+                    Text(detail)
+                        .font(.system(size: 11).monospacedDigit())
+                        .foregroundStyle(.white.opacity(0.4))
+                }
+            }
+            .lineLimit(1)
+            .truncationMode(.middle)
+            Spacer(minLength: 6)
+            if isStopping {
+                ProgressView().controlSize(.small)
+            } else if isConfirming {
+                Button("Cancel", action: cancel)
+                    .buttonStyle(ChipButtonStyle())
+                Button("Stop", action: stop)
+                    .buttonStyle(ChipButtonStyle(fill: .red))
+            } else {
+                if server.url != nil {
+                    CircleButton(symbol: "arrow.up.right", action: open)
+                        .help("Open localhost:\(String(server.port))")
+                        .accessibilityLabel("Open in browser")
+                }
+                CircleButton(symbol: "stop.fill", action: askToStop)
+                    .help("Stop")
+                    .accessibilityLabel("Stop server")
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.white.opacity(isHovering ? 0.06 : 0)))
+        .contentShape(Rectangle())
+        .onHover { isHovering = $0 }
+        .animation(.easeOut(duration: 0.15), value: isHovering)
+        .help(server.directory.map { "\(server.command)\n\($0)" } ?? server.command)
+    }
+
+    private var title: String {
+        [server.kind.name, server.project].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    /// ":3000, :9229 · pid 812"
+    private var detail: String {
+        let ports = server.ports.map { ":\(String($0))" }.joined(separator: ", ")
+        return "\(ports) · pid \(String(server.pid))"
     }
 }
 

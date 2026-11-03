@@ -24,10 +24,11 @@ enum HomePage: Equatable, CaseIterable {
     case clipboard
     case timer
     case convert
+    case servers
     case activity
 
     /// Pages the floating dock switches between; Activity is reached from the Home strip.
-    static let tabs: [HomePage] = [.home, .clipboard, .timer, .convert]
+    static let tabs: [HomePage] = [.home, .clipboard, .timer, .convert, .servers]
 
     var title: String {
         switch self {
@@ -35,6 +36,7 @@ enum HomePage: Equatable, CaseIterable {
         case .clipboard: "Clipboard"
         case .timer: "Timer"
         case .convert: "Convert"
+        case .servers: "Dev Servers"
         case .activity: "Activity"
         }
     }
@@ -45,6 +47,7 @@ enum HomePage: Equatable, CaseIterable {
         case .clipboard: "doc.on.clipboard"
         case .timer: "timer"
         case .convert: "photo.on.rectangle.angled"
+        case .servers: "server.rack"
         case .activity: "bolt"
         }
     }
@@ -197,12 +200,12 @@ final class NotchModel {
             return dropZoneShape
         case (.notch, .home):
             return ShapeMetrics(
-                size: CGSize(width: NotchGeometry.panelWidth, height: notch.height + homeContentHeight),
+                size: CGSize(width: NotchGeometry.homeWidth, height: notch.height + homeContentHeight),
                 top: 0, topRadius: 0, bottomRadius: 24, shoulder: Self.expandedShoulder
             )
         case (.island, .home):
             return ShapeMetrics(
-                size: CGSize(width: NotchGeometry.panelWidth, height: homeContentHeight),
+                size: CGSize(width: NotchGeometry.homeWidth, height: homeContentHeight),
                 top: 6, topRadius: 24, bottomRadius: 24
             )
         case (.notch, .open):
