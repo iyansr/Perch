@@ -1,12 +1,16 @@
 import {
 	ArrowDownIcon,
+	ArrowUpRightIcon,
 	CaretLeftIcon,
 	CheckIcon,
 	ClipboardTextIcon,
 	CloudSunIcon,
 	CopyIcon,
+	DatabaseIcon,
 	FileArrowDownIcon,
 	GearSixIcon,
+	GlobeIcon,
+	HardDrivesIcon,
 	HeadphonesIcon,
 	HouseIcon,
 	ImageSquareIcon,
@@ -17,13 +21,14 @@ import {
 	PlayIcon,
 	SkipBackIcon,
 	SkipForwardIcon,
+	StopIcon,
 	TerminalWindowIcon,
 	TimerIcon,
 	VideoCameraIcon,
 	XIcon,
 } from '@phosphor-icons/react';
 import { useEffect, useState, type ReactNode } from 'react';
-import { CLIPS, CONVERT_ACTIONS, DEVICES, MEETING, OTHER_AGENTS, SOURCE_FILE, TRACK, WEATHER, type ConvertAction } from './data';
+import { CLIPS, CONVERT_ACTIONS, DEV_SERVERS, DEVICES, MEETING, OTHER_AGENTS, SOURCE_FILE, TRACK, WEATHER, type ConvertAction } from './data';
 import type { ActivityItem, ConvertState, Display, HomePage, TimerState } from './model';
 import { clock } from './model';
 
@@ -223,6 +228,7 @@ const DOCK_TABS: { id: HomePage; label: string; Icon: typeof HouseIcon }[] = [
 	{ id: 'clipboard', label: 'Clipboard', Icon: ClipboardTextIcon },
 	{ id: 'timer', label: 'Timer', Icon: TimerIcon },
 	{ id: 'convert', label: 'Convert', Icon: ImageSquareIcon },
+	{ id: 'servers', label: 'Dev Servers', Icon: HardDrivesIcon },
 ];
 
 /** HomeDock: a glass pill under the surface that switches Home pages. 32×24 tabs, 12 pt icons. */
@@ -621,6 +627,111 @@ export function ConvertPage({ items, convert }: { items: ActivityItem[]; convert
 		</div>
 	);
 }
+
+/**
+ * Dev Servers page (HomeView.swift, DevServersPage): one row per listening process with Open and Stop.
+ * Stop asks first, inline; the row then shows a spinner and leaves the list.
+ */
+export function DevServersPage({ say }: { say: (text: string) => void }) {
+	const [servers, setServers] = useState(DEV_SERVERS);
+	const [confirming, setConfirming] = useState<number | null>(null);
+	const [stopping, setStopping] = useState<number | null>(null);
+	useEffect(() => {
+		if (stopping === null) return;
+		const id = window.setTimeout(() => {
+			setServers((list) => list.filter((s) => s.pid !== stopping));
+			setStopping(null);
+		}, 700);
+		return () => window.clearTimeout(id);
+	}, [stopping]);
+
+	return (
+		<div className={SOLID}>
+			<ModuleHeader title="Dev Servers">
+				{servers.length > 0 && <span className="text-[11px] font-semibold text-[#30d158]">{servers.length} running</span>}
+			</ModuleHeader>
+			{servers.length === 0 ? (
+				<>
+					<span className="mt-2 text-[13px] font-semibold">No dev servers running</span>
+					<Note>Servers you start on localhost show up here</Note>
+				</>
+			) : (
+				<ul className="-mx-1.5 mt-1 flex w-[calc(100%+12px)] flex-col">
+					{servers.map((s) => {
+						const asking = confirming === s.pid;
+						const tint = asking ? '#ff453a' : '#30d158';
+						const KindIcon = s.web ? GlobeIcon : DatabaseIcon;
+						const port = s.ports[0];
+						return (
+							<li key={s.pid} className="flex h-10 items-center gap-2 rounded-[10px] px-1.5 transition-colors hover:bg-white/[0.06]">
+								<span
+									className="grid size-6 shrink-0 place-items-center rounded-[7px]"
+									style={{ background: `${tint}2e`, color: tint }}
+								>
+									<KindIcon aria-hidden size={11} weight="bold" />
+								</span>
+								<span className="flex min-w-0 flex-1 flex-col">
+									<span className="truncate text-[12px] font-semibold">
+										{asking ? `Stop ${s.kind} on :${port}?` : `${s.kind} · ${s.project}`}
+									</span>
+									<span className="truncate text-[11px] text-white/40 tabular-nums">
+										{asking ? `Ends process ${s.pid}` : `${s.ports.map((p) => `:${p}`).join(', ')} · pid ${s.pid}`}
+									</span>
+								</span>
+								{stopping === s.pid ? (
+									<span aria-label="Stopping" className="size-4 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+								) : asking ? (
+									<span className="flex gap-1.5">
+										<button type="button" onClick={() => setConfirming(null)} className={CHIP}>
+											Cancel
+										</button>
+										<button
+											type="button"
+											onClick={() => {
+												setConfirming(null);
+												setStopping(s.pid);
+												say(`Stopped ${s.kind} on :${port}`);
+											}}
+											className="press h-[26px] rounded-full bg-[#ff453a] px-2.5 text-[12px] font-medium text-white hover:brightness-110"
+										>
+											Stop
+										</button>
+									</span>
+								) : (
+									<span className="flex gap-1.5">
+										{s.web && (
+											<button
+												type="button"
+												aria-label={`Open localhost:${port}`}
+												title={`Open localhost:${port}`}
+												onClick={() => say(`Opens localhost:${port} in your browser`)}
+												className={ROUND_BTN}
+											>
+												<ArrowUpRightIcon size={11} weight="bold" />
+											</button>
+										)}
+										<button
+											type="button"
+											aria-label={`Stop ${s.kind}`}
+											title="Stop"
+											onClick={() => setConfirming(s.pid)}
+											className={ROUND_BTN}
+										>
+											<StopIcon size={10} weight="fill" />
+										</button>
+									</span>
+								)}
+							</li>
+						);
+					})}
+				</ul>
+			)}
+		</div>
+	);
+}
+
+/** CircleButton: 26 px, 14 % white. */
+const ROUND_BTN = 'press grid size-[26px] place-items-center rounded-full bg-white/[0.14] text-white hover:bg-white/[0.22]';
 
 /** Every activity with its actions; esc or "Home" shrinks it back into the Activity module. */
 export function ActivityPage({ items, onBack, ...actions }: { items: ActivityItem[]; onBack: () => void } & RowActions) {

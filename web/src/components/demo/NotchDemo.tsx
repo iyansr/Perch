@@ -10,6 +10,7 @@ import {
 	CompactView,
 	ConvertPage,
 	ConvertView,
+	DevServersPage,
 	DropView,
 	GlanceView,
 	HomeBar,
@@ -180,8 +181,8 @@ export default function NotchDemo() {
 			h = pad + contentH;
 			break;
 		case 'home':
-			// NotchGeometry.panelWidth; the bar inside Home already covers the notch band.
-			w = Math.min(480, maxW);
+			// NotchGeometry.homeWidth; the bar inside Home already covers the notch band.
+			w = Math.min(600, maxW);
 			h = contentH;
 			break;
 		case 'panel':
@@ -281,6 +282,12 @@ export default function NotchDemo() {
 			setViaCommand(true);
 			setQuery('');
 			setActive(0);
+			return;
+		}
+		if (r.opensServers) {
+			setQuery('');
+			setHomePage('servers');
+			openHome();
 			return;
 		}
 		if (r.kind === 'timer' && r.minutes) {
@@ -457,6 +464,9 @@ export default function NotchDemo() {
 					break;
 				case 'convert':
 					page = <ConvertPage items={items} convert={convert} />;
+					break;
+				case 'servers':
+					page = <DevServersPage say={say} />;
 					break;
 				case 'home':
 					page = (

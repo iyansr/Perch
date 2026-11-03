@@ -12,6 +12,8 @@ export type Result = {
 	tint?: string;
 	/** Clipboard History command: opens the clipboard scope instead of running. */
 	opensClipboard?: boolean;
+	/** Dev Servers command: opens Home on the Dev Servers page. */
+	opensServers?: boolean;
 	/** Timer result: minutes to start. */
 	minutes?: number;
 };
@@ -96,6 +98,14 @@ export const COMMANDS: Result[] = [
 		keywords: 'clip paste copy history',
 		opensClipboard: true,
 	},
+	{
+		id: 'cmd-servers',
+		kind: 'command',
+		title: 'Dev Servers',
+		meta: 'Command',
+		keywords: 'ports localhost kill port running servers',
+		opensServers: true,
+	},
 	{ id: 'cmd-settings', kind: 'command', title: 'Settings', meta: 'Command', keywords: 'preferences hotkey shortcut' },
 ];
 
@@ -146,4 +156,14 @@ export const WEATHER = { temp: '24°', place: 'Jakarta' };
 export const DEVICES = [
 	{ name: 'AirPods Pro', percent: 64 },
 	{ name: 'Magic Mouse', percent: 18 },
+];
+
+/** Dev Servers page rows: listening processes of the user, as Perch/DevServers/DevServer.swift lists them. */
+export type DevServer = { pid: number; ports: number[]; kind: string; project: string; web: boolean };
+
+export const DEV_SERVERS: DevServer[] = [
+	{ pid: 41872, ports: [3000], kind: 'Next.js', project: 'perch-web', web: true },
+	{ pid: 41990, ports: [5173], kind: 'Vite', project: 'dashboard', web: true },
+	{ pid: 812, ports: [5432], kind: 'PostgreSQL', project: 'api-server', web: false },
+	{ pid: 42110, ports: [8000], kind: 'Django', project: 'billing', web: true },
 ];

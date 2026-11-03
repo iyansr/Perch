@@ -11,6 +11,7 @@ import {
 	GearSixIcon,
 	GlobeIcon,
 	HammerIcon,
+	HardDrivesIcon,
 	ImageIcon,
 	LinkIcon,
 	MonitorIcon,
@@ -48,6 +49,7 @@ const APP_GLYPH: Record<string, Icon> = {
 	dock: AppWindowIcon,
 	appearance: PaletteIcon,
 	displays: MonitorIcon,
+	'cmd-servers': HardDrivesIcon,
 };
 
 /** ResultIcon fallback: a tile in the kind's colour with a bold white symbol. */
@@ -125,7 +127,7 @@ export function actionTitle(r: Result) {
 		case 'setting':
 			return 'Open Pane';
 		case 'command':
-			return r.opensClipboard ? 'Show' : 'Open';
+			return r.opensClipboard || r.opensServers ? 'Show' : 'Open';
 		case 'clip':
 			return 'Paste';
 		case 'answer':

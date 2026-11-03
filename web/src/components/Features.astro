@@ -1,5 +1,16 @@
 ---
-import { AppWindowIcon, ClipboardTextIcon, EqualsIcon, GearSixIcon, PushPinIcon, TimerIcon } from '@phosphor-icons/react/ssr';
+import {
+	AppWindowIcon,
+	ArrowUpRightIcon,
+	ClipboardTextIcon,
+	DatabaseIcon,
+	EqualsIcon,
+	GearSixIcon,
+	GlobeIcon,
+	PushPinIcon,
+	StopIcon,
+	TimerIcon,
+} from '@phosphor-icons/react/ssr';
 
 const searches = [
 	{ q: 'dark mode', icon: GearSixIcon, title: 'Appearance', meta: 'System Settings' },
@@ -14,14 +25,20 @@ const clips = [
 	{ text: '#FF9F0A', meta: 'Figma', pinned: false },
 ];
 
+const servers = [
+	{ kind: 'Next.js', project: 'perch-web', port: 3000, pid: 41872, web: true },
+	{ kind: 'Vite', project: 'dashboard', port: 5173, pid: 41990, web: true },
+	{ kind: 'PostgreSQL', project: 'api-server', port: 5432, pid: 812, web: false },
+];
+
 const bars = [0.45, 0.8, 0.6, 1, 0.7, 0.4, 0.85, 0.55];
 ---
 
 <section id="features" class="mx-auto max-w-6xl scroll-mt-20 px-5 pt-28 sm:pt-36">
 	<h2 class="display max-w-[20ch] text-[34px] sm:text-[48px]">Everything you reach for, one gesture away.</h2>
 	<p class="mt-4 max-w-[58ch] text-[17px] leading-relaxed text-fg-2">
-		A launcher, a clipboard manager, a converter and a status bar for long-running work, sharing one black shape at the
-		top of your screen.
+		A launcher, a clipboard manager, a converter, a dev server list and a status bar for long-running work, sharing one
+		black shape at the top of your screen.
 	</p>
 
 	<div class="mt-12 grid gap-4 md:grid-cols-3">
@@ -139,6 +156,70 @@ const bars = [0.45, 0.8, 0.6, 1, 0.7, 0.4, 0.85, 0.55];
 					<span class="text-[12px] font-medium text-white/85">AirPods</span>
 					<span class="font-mono text-[12px] text-white/85">82%</span>
 				</div>
+			</div>
+		</article>
+
+		<article class="grid overflow-hidden rounded-[22px] border border-line bg-raised md:col-span-3 md:grid-cols-[1fr_1.4fr]">
+			<div class="p-7">
+				<h3 class="text-[21px] font-semibold tracking-tight">Dev servers, found</h3>
+				<p class="mt-2 max-w-[44ch] text-[15px] leading-relaxed text-fg-2">
+					Every server you started on localhost, with its port, framework and project folder: Next.js, Vite, Django,
+					Rails, Postgres and more. Open one in the browser, or stop it after a confirmation. Apps, system services and
+					your coding agents’ helpers stay out of the list.
+				</p>
+				<p class="mt-4 text-[13px] text-fg-2">
+					Type <kbd class="font-mono text-fg">ports</kbd> in search, or give <span class="text-fg">Dev Servers</span> its
+					own shortcut.
+				</p>
+			</div>
+			<div aria-hidden="true" class="p-7 pt-0 md:pt-7">
+				<ul class="space-y-1 rounded-[18px] border border-white/[0.08] bg-black p-3">
+					<li class="flex items-center justify-between px-1.5 pb-1 text-[11px] font-semibold">
+						<span class="text-white/60">Dev Servers</span>
+						<span class="text-[#30d158]">{servers.length} running</span>
+					</li>
+					{
+						servers.map((s, i) => {
+							const asking = i === 2;
+							const KindIcon = s.web ? GlobeIcon : DatabaseIcon;
+							return (
+								<li class:list={['flex items-center gap-2.5 rounded-[10px] px-1.5 py-1.5', i === 0 && 'bg-white/[0.06]']}>
+									<span
+										class:list={[
+											'grid size-7 shrink-0 place-items-center rounded-[8px]',
+											asking ? 'bg-[#ff453a]/20 text-[#ff453a]' : 'bg-[#30d158]/20 text-[#30d158]',
+										]}
+									>
+										<KindIcon size={13} weight="bold" />
+									</span>
+									<span class="flex min-w-0 flex-1 flex-col">
+										<span class="truncate text-[13px] font-semibold text-white">
+											{asking ? `Stop ${s.kind} on :${s.port}?` : `${s.kind} · ${s.project}`}
+										</span>
+										<span class="font-mono text-[11px] text-white/40">
+											{asking ? `Ends process ${s.pid}` : `:${s.port} · pid ${s.pid}`}
+										</span>
+									</span>
+									{asking ? (
+										<span class="flex gap-1.5">
+											<span class="rounded-full bg-white/10 px-2.5 py-1 text-[12px] font-medium text-white">Cancel</span>
+											<span class="rounded-full bg-[#ff453a] px-2.5 py-1 text-[12px] font-medium text-white">Stop</span>
+										</span>
+									) : (
+										<span class="flex gap-1.5 text-white">
+											<span class="grid size-[26px] place-items-center rounded-full bg-white/[0.14]">
+												<ArrowUpRightIcon size={11} weight="bold" />
+											</span>
+											<span class="grid size-[26px] place-items-center rounded-full bg-white/[0.14]">
+												<StopIcon size={10} weight="fill" />
+											</span>
+										</span>
+									)}
+								</li>
+							);
+						})
+					}
+				</ul>
 			</div>
 		</article>
 
