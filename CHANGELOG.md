@@ -1,5 +1,13 @@
 # perch
 
+## 0.2.0
+
+### Minor Changes
+
+- [`74581ed`](https://github.com/iyansr/Perch/commit/74581ed745b841bacab4037c54f0db4f628c1a16) Thanks [@iyansr](https://github.com/iyansr)! - Add a Dev Servers page to Home: every local server you started (Next.js, Vite, Django, Rails, Postgres and more) with its port and project folder. Open one in the browser, or stop it after a confirmation. Apps, system services and coding-agent helpers are left out. It is also a command: search "Dev Servers" or "ports", or give it a shortcut in Settings → Shortcuts.
+  
+  Home and its pages are wider (600 pt) so the dashboard tiles have more room; the search panel keeps its width.
+
 ## 0.1.6
 
 ### Patch Changes
