@@ -424,7 +424,9 @@ final class NotchController {
             guard paster.canPaste else {
                 if promotes { store.promote(item.id) }
                 close()
-                flashHint("Copied — enable paste in Settings")
+                flashHint("Copied — grant Accessibility to paste")
+                // ⌘V can only be posted with Accessibility; without it ↵ can never paste, so ask for it now.
+                AccessibilityPermission.requestPrompt()
                 return
             }
             if action == .keepOpen {
