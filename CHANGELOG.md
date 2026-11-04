@@ -1,5 +1,11 @@
 # perch
 
+## 0.3.2
+
+### Patch Changes
+
+- [`8bffdff`](https://github.com/iyansr/Perch/commit/8bffdff680412d21c618ff3cf78af5feef653ef5) Thanks [@iyansr](https://github.com/iyansr)! - Opening Calendar shows today straight away instead of sometimes sliding the day ribbon across from a year back.
+
 ## 0.3.1
 
 ### Patch Changes
