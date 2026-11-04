@@ -102,6 +102,7 @@ final class NotchController {
             switch command {
             case .clipboardHistory: toggle(mode: .clipboard)
             case .searchFiles: toggle(mode: .files)
+            case .calendar: toggle(page: .calendar)
             case .devServers: toggle(page: .servers)
             case .settings: openSettings()
             case .quit: NSApp.terminate(nil)
@@ -345,6 +346,8 @@ final class NotchController {
             model.push(.clipboard)
         case .searchFiles:
             model.push(.files)
+        case .calendar:
+            toggle(page: .calendar)
         case .devServers:
             toggle(page: .servers)
         case .settings:
@@ -594,6 +597,16 @@ final class NotchController {
         if Int(event.keyCode) == kVK_Escape {
             if model.homePage == .home { close() } else { showHomePage(.home) }
             return nil
+        }
+        // Calendar: ← → step a day, ↑ ↓ a week.
+        if model.homePage == .calendar, event.modifierFlags.intersection([.command, .control, .option]).isEmpty {
+            switch Int(event.keyCode) {
+            case kVK_LeftArrow: CalendarStore.shared.step(days: -1); return nil
+            case kVK_RightArrow: CalendarStore.shared.step(days: 1); return nil
+            case kVK_UpArrow: CalendarStore.shared.step(days: -7); return nil
+            case kVK_DownArrow: CalendarStore.shared.step(days: 7); return nil
+            default: break
+            }
         }
         // ⌘/⌃ chords keep their menu meaning.
         if !event.modifierFlags.intersection([.command, .control]).isEmpty { return event }

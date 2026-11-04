@@ -67,6 +67,18 @@ struct GeneralSettingsPage: View {
                         .labelsHidden()
                 }
             }
+            SettingsGroup(title: "Calendar") {
+                SettingsRow(
+                    symbol: "clock",
+                    title: "24-hour time",
+                    detail: "Show calendar times as 20:00 instead of 8:00 PM."
+                ) {
+                    Toggle("24-hour time", isOn: $settings.uses24HourTime)
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                        .labelsHidden()
+                }
+            }
             SettingsGroup(title: "Updates") {
                 SettingsRow(
                     symbol: "arrow.triangle.2.circlepath",

@@ -20,6 +20,7 @@ final class AppSettings {
         static let hiddenInLauncher = "perch.hiddenInLauncher"
         static let mediaInactivityMinutes = "perch.mediaInactivityMinutes"
         static let automaticallyChecksForUpdates = "perch.automaticallyChecksForUpdates"
+        static let uses24HourTime = "perch.uses24HourTime"
     }
 
     /// Activity sources on for a fresh install: the ones that need no permission.
@@ -77,6 +78,11 @@ final class AppSettings {
         didSet { defaults.set(automaticallyChecksForUpdates, forKey: Key.automaticallyChecksForUpdates) }
     }
 
+    /// Calendar times as 20:00 instead of 8:00 PM. Defaults to the region's clock.
+    var uses24HourTime: Bool {
+        didSet { defaults.set(uses24HourTime, forKey: Key.uses24HourTime) }
+    }
+
     static let defaultDictationHotkey = Shortcut(keyCode: UInt32(kVK_ANSI_D), carbonModifiers: UInt32(controlKey | optionKey))
 
     init(defaults: UserDefaults = .standard) {
@@ -97,5 +103,7 @@ final class AppSettings {
         hiddenInLauncher = Set(defaults.stringArray(forKey: Key.hiddenInLauncher) ?? [])
         mediaInactivityMinutes = max(1, defaults.object(forKey: Key.mediaInactivityMinutes) as? Int ?? 5)
         automaticallyChecksForUpdates = defaults.object(forKey: Key.automaticallyChecksForUpdates) as? Bool ?? true
+        uses24HourTime = defaults.object(forKey: Key.uses24HourTime) as? Bool
+            ?? !(DateFormatter.dateFormat(fromTemplate: "j", options: 0, locale: .current) ?? "").contains("a")
     }
 }

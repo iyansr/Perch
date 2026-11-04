@@ -88,6 +88,7 @@ struct PerchCommandTests {
         #expect(PerchCommand.matches("preferences").first == .settings)
         #expect(PerchCommand.matches("exit").first == .quit)
         #expect(PerchCommand.matches("ports").first == .devServers)
+        #expect(PerchCommand.matches("schedule").first == .calendar)
     }
 
     @Test func exactTitleOutranksFuzzyMatches() {

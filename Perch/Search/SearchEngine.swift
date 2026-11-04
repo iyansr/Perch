@@ -25,12 +25,13 @@ enum SearchMode: Equatable {
 
 /// Built-in commands, listed under "Commands" in the root list. Raw values key their shortcuts and launcher visibility.
 enum PerchCommand: String, CaseIterable {
-    case clipboardHistory, searchFiles, devServers, settings, quit
+    case clipboardHistory, searchFiles, calendar, devServers, settings, quit
 
     var title: String {
         switch self {
         case .clipboardHistory: "Clipboard History"
         case .searchFiles: "Search Files"
+        case .calendar: "Calendar"
         case .devServers: "Dev Servers"
         case .settings: "Settings"
         case .quit: "Quit Perch"
@@ -41,6 +42,7 @@ enum PerchCommand: String, CaseIterable {
         switch self {
         case .clipboardHistory: "doc.on.clipboard"
         case .searchFiles: "doc.text.magnifyingglass"
+        case .calendar: "calendar"
         case .devServers: "server.rack"
         case .settings: "gearshape"
         case .quit: "power"
@@ -52,6 +54,7 @@ enum PerchCommand: String, CaseIterable {
         switch self {
         case .clipboardHistory: ["clip", "paste", "copy history"]
         case .searchFiles: ["find files", "open file", "documents"]
+        case .calendar: ["agenda", "schedule", "events", "meetings"]
         case .devServers: ["ports", "localhost", "kill port", "running servers"]
         case .settings: ["preferences", "hotkey", "shortcut"]
         case .quit: ["exit", "close perch"]

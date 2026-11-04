@@ -11,7 +11,8 @@ enum ScreenStyle: Equatable {
 /// Where the surface lives on screen. The panel is a fixed-size transparent window
 /// centred on the notch; everything else is laid out inside it.
 struct NotchGeometry: Equatable {
-    static let windowSize = CGSize(width: 760, height: 620)
+    /// The widest surface (Calendar, 760) plus its concave shoulders (10 pt each side), so the top arch is never clipped.
+    static let windowSize = CGSize(width: 780, height: 620)
     /// Idle island: a 2:1 pill, the same height as the compact activity pill.
     static let islandSize = CGSize(width: 56, height: 28)
     /// iPhone Dynamic Island, compact with a live activity on both sides of the camera.
@@ -20,6 +21,12 @@ struct NotchGeometry: Equatable {
     static let panelWidth: CGFloat = 480
     /// Home dashboard and its pages (clipboard, timer, convert, dev servers, activity).
     static let homeWidth: CGFloat = 600
+    /// The Calendar page: a wide ribbon and a timeline that shows event titles.
+    static let calendarWidth: CGFloat = 760
+
+    static func homeWidth(for page: HomePage) -> CGFloat {
+        page == .calendar ? calendarWidth : homeWidth
+    }
     /// Search mode (search row + results, incl. clipboard list + detail); the surface morphs to it from home.
     static let searchPanelWidth: CGFloat = 520
     static let panelGap: CGFloat = 10

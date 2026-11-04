@@ -164,7 +164,7 @@ final class MeetingSource: ActivitySource {
     }
 
     /// Zoom links open the app directly when it is installed.
-    private static func preferredURL(_ url: URL) -> URL {
+    static func preferredURL(_ url: URL) -> URL {
         guard NSWorkspace.shared.urlForApplication(withBundleIdentifier: "us.zoom.xos") != nil,
               let app = MeetingLink.zoomAppURL(for: url)
         else { return url }

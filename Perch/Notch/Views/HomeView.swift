@@ -28,6 +28,10 @@ struct HomeView: View {
                 TimerPage(center: model.activities)
                     .homePage(.timer, model: model, top: top)
                     .transition(.homeTab)
+            case .calendar:
+                CalendarPage()
+                    .homePage(.calendar, model: model, top: top)
+                    .transition(.homeTab)
             case .convert:
                 ConvertModule(center: model.activities)
                     .homePage(.convert, model: model, top: top)
@@ -42,12 +46,12 @@ struct HomeView: View {
                     .transition(.homeDetail)
             }
         }
-        .frame(width: NotchGeometry.homeWidth)
+        .frame(width: NotchGeometry.homeWidth(for: model.homePage))
         .padding(.top, notch ? model.geometry.notchSize.height : 0)
         .frame(maxHeight: .infinity, alignment: .top)
         .overlay(alignment: .top) {
             HomeBar(controller: controller)
-                .frame(width: NotchGeometry.homeWidth, height: barHeight)
+                .frame(width: NotchGeometry.homeWidth(for: model.homePage), height: barHeight)
         }
     }
 }
