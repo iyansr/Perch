@@ -72,7 +72,7 @@ struct CalendarPage: View {
     }
 
     private func selected(in agenda: DayAgenda) -> CalendarEvent? {
-        let all = agenda.allDay + agenda.early + agenda.placed.map(\.event)
+        let all = agenda.allDay + agenda.placed.map(\.event)
         if let pickedEventID, let match = all.first(where: { $0.id == pickedEventID }) { return match }
         return CalendarLogic.defaultSelection(in: agenda, isToday: store.calendar.isDateInToday(store.selectedDay), now: Date())
     }
@@ -115,7 +115,7 @@ struct CalendarPage: View {
         let day = store.selectedDay
         let offset = store.calendar.dateComponents([.day], from: store.today, to: day).day ?? 0
         let past = isToday ? agenda.placed.filter { $0.event.end <= Date() }.count : 0
-        let timed = agenda.placed.count + agenda.early.count
+        let timed = agenda.placed.count
         let counts = [
             timed == 0 ? nil : timed == 1 ? "1 event" : "\(timed) events",
             agenda.allDay.isEmpty ? nil : "\(agenda.allDay.count) all day",
@@ -152,73 +152,88 @@ private struct DayRibbon: View {
     @Binding var shownMonth: Date?
     let cell: CGFloat
     let width: CGFloat
-    /// Scroll state lives here, so scrolling re-renders only the ribbon, not the timeline and detail below it.
-    @State private var position: Date?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         // Half the width either side, so the selected day can sit in the centre even at the ends.
-        // Spacers inside the stack, not `.contentMargins` (it stops the cells receiving clicks on macOS) and not
-        // `.padding` (scrollPosition ignores it, so the "centred" day lands six days off).
+        // Spacers inside the stack, not `.contentMargins` (it stops the cells receiving clicks on macOS).
         let margin = max(0, (width - cell) / 2)
-        ScrollView(.horizontal) {
-            LazyHStack(spacing: 0) {
-                Color.clear.frame(width: margin, height: 1)
-                ForEach(store.days, id: \.self) { day in
-                    DayCell(day: day, store: store, width: cell, wide: width >= 600).id(day)
+        let days = store.days
+        let today = store.today
+        let selected = store.selectedDay
+        let wide = width >= 600
+        // No scroll state is written while scrolling: a ScrollViewReader scrolls on request, and the month title
+        // follows a geometry reading that only changes when the centred month does. Writing the centred day to state
+        // (`scrollPosition(id:)`) re-ran this body for every day passing the centre.
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal) {
+                LazyHStack(spacing: 0) {
+                    Color.clear.frame(width: margin, height: 1)
+                    ForEach(days) { day in
+                        DayCell(day: day, isToday: day.date == today, isSelected: day.date == selected,
+                                dots: store.dots(on: day.date), width: cell, wide: wide) { store.select(day.date, scroll: true) }
+                            .equatable()
+                            .id(day.date)
+                    }
+                    Color.clear.frame(width: margin, height: 1)
                 }
-                Color.clear.frame(width: margin, height: 1)
+                .scrollTargetLayout()
             }
-            .scrollTargetLayout()
-        }
-        .scrollIndicators(.never)
-        .scrollPosition(id: $position, anchor: .center)
-        .scrollTargetBehavior(.viewAligned)
-        .mask {
-            HStack(spacing: 0) {
-                LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing).frame(width: 32)
-                Color.black
-                LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing).frame(width: 32)
+            .scrollIndicators(.never)
+            .scrollTargetBehavior(.viewAligned)
+            // The visible cells, not the offset: a lazy stack only estimates its width, so offset / cell drifts by weeks.
+            .onScrollTargetVisibilityChange(idType: Date.self, threshold: 0.5) { visible in
+                guard !visible.isEmpty,
+                      let month = store.calendar.dateInterval(of: .month, for: visible[visible.count / 2])?.start,
+                      month != shownMonth else { return }
+                shownMonth = month
             }
+            .onChange(of: store.scrollRequest) {
+                withAnimation(reduceMotion ? nil : .smooth(duration: 0.3)) { proxy.scrollTo(store.selectedDay, anchor: .center) }
+            }
+            .onAppear { proxy.scrollTo(store.selectedDay, anchor: .center) }
         }
-        .onChange(of: position) {
-            guard let position, let month = store.calendar.dateInterval(of: .month, for: position)?.start,
-                  month != shownMonth else { return }
-            shownMonth = month
+        // Edge fades drawn over the black surface, not `.mask`: a mask re-renders the scrolling strip offscreen every frame.
+        .overlay(alignment: .leading) {
+            LinearGradient(colors: [.black, .black.opacity(0)], startPoint: .leading, endPoint: .trailing)
+                .frame(width: 32).allowsHitTesting(false)
         }
-        .onChange(of: store.scrollRequest) {
-            withAnimation(reduceMotion ? nil : .smooth(duration: 0.3)) { position = store.selectedDay }
+        .overlay(alignment: .trailing) {
+            LinearGradient(colors: [.black.opacity(0), .black], startPoint: .leading, endPoint: .trailing)
+                .frame(width: 32).allowsHitTesting(false)
         }
-        .task { position = store.selectedDay }
     }
 }
 
-private struct DayCell: View {
-    let day: Date
-    let store: CalendarStore
+/// Plain values only, compared with `.equatable()`, so a selection change redraws two cells, not every visible one.
+private struct DayCell: View, Equatable {
+    let day: RibbonDay
+    let isToday: Bool
+    let isSelected: Bool
+    let dots: [CalendarEvent.RGB]
     let width: CGFloat
     let wide: Bool
+    let select: () -> Void
 
     private static let weekend = Color(red: 1, green: 0.41, blue: 0.38)
 
+    static func == (lhs: DayCell, rhs: DayCell) -> Bool {
+        lhs.day == rhs.day && lhs.isToday == rhs.isToday && lhs.isSelected == rhs.isSelected
+            && lhs.dots == rhs.dots && lhs.width == rhs.width && lhs.wide == rhs.wide
+    }
+
     var body: some View {
-        let calendar = store.calendar
-        let isToday = calendar.isDateInToday(day)
-        let isSelected = day == store.selectedDay
-        let isWeekend = calendar.isDateInWeekend(day)
-        let isFirst = calendar.component(.day, from: day) == 1
         let circle: CGFloat = width >= 72 ? 38 : width >= 64 ? 36 : width >= 56 ? 34 : 32
-        Button { store.select(day, scroll: true) } label: {
+        Button(action: select) {
             VStack(spacing: 0) {
-                let weekday = day.formatted(.dateTime.weekday(wide ? .abbreviated : .narrow)).uppercased()
-                Text(weekday)
+                Text(wide ? day.weekdayShort : day.weekdayNarrow)
                     .font(.system(size: 10, weight: .semibold))
                     .tracking(0.6)
-                    .foregroundStyle(isToday ? Color.calendarRed : isWeekend ? Self.weekend.opacity(0.62) : .white.opacity(0.38))
+                    .foregroundStyle(isToday ? Color.calendarRed : day.isWeekend ? Self.weekend.opacity(0.62) : .white.opacity(0.38))
                     .frame(height: 13)
-                Text("\(calendar.component(.day, from: day))")
+                Text(day.number)
                     .font(.system(size: width >= 64 ? 17 : 16, weight: isToday ? .semibold : .medium).monospacedDigit())
-                    .foregroundStyle(isToday ? .white : isWeekend ? Self.weekend.opacity(0.9) : .white.opacity(0.94))
+                    .foregroundStyle(isToday ? .white : day.isWeekend ? Self.weekend.opacity(0.9) : .white.opacity(0.94))
                     .frame(width: circle, height: circle)
                     .background { Circle().fill(isToday ? Color.calendarRed : isSelected ? .white.opacity(0.11) : .clear) }
                     .overlay {
@@ -226,8 +241,8 @@ private struct DayCell: View {
                     }
                     .padding(.top, 4)
                 HStack(spacing: 3) {
-                    ForEach(Array(store.dots(on: day).enumerated()), id: \.offset) { _, rgb in
-                        Circle().fill(rgb.color).frame(width: 5, height: 5)
+                    ForEach(dots.indices, id: \.self) { i in
+                        Circle().fill(dots[i].color).frame(width: 5, height: 5)
                     }
                 }
                 .frame(height: 5)
@@ -236,11 +251,11 @@ private struct DayCell: View {
             .padding(.top, 24)
             .frame(width: width, height: 92, alignment: .top)
             .overlay(alignment: .topLeading) {
-                if isFirst { Rectangle().fill(.white.opacity(0.1)).frame(width: 1).padding(.top, 8).padding(.bottom, 10) }
+                if day.monthChip != nil { Rectangle().fill(.white.opacity(0.1)).frame(width: 1).padding(.top, 8).padding(.bottom, 10) }
             }
             .overlay(alignment: .top) {
-                if isFirst {
-                    Text(day.formatted(.dateTime.month(.abbreviated)).uppercased())
+                if let chip = day.monthChip {
+                    Text(chip)
                         .font(.system(size: 9.5, weight: .bold)).tracking(0.8)
                         .foregroundStyle(.white.opacity(0.62))
                         .padding(.horizontal, 6).frame(height: 15)
@@ -252,7 +267,7 @@ private struct DayCell: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle(scale: 0.94))
-        .accessibilityLabel(day.formatted(.dateTime.weekday(.wide).day().month(.wide)) + (isToday ? ", today" : ""))
+        .accessibilityLabel(day.spoken + (isToday ? ", today" : ""))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
@@ -269,24 +284,32 @@ private struct DayTimeline: View {
     let width: CGFloat
     let select: (CalendarEvent) -> Void
 
-    private let firstHour = CalendarLogic.firstHour
-    private let hours = CalendarLogic.lastHour - CalendarLogic.firstHour
-    /// Prototype gutter: hour 0 sits 24 pt in, so the first and last labels are not clipped.
+    /// Prototype gutter: midnight sits 24 pt in, so the first and last labels are not clipped.
     private let lead: CGFloat = 24
+    /// Recreated per day (the page keys this view by date), so each day opens at its own `openingMinute`.
+    @State private var scroll = ScrollPosition(edge: .leading)
 
     var body: some View {
-        // The 18 hours fit the width, so a wider surface gives each hour (and each title) more room.
-        let hw = (width - 2 * lead) / CGFloat(hours)
+        // 18 hours fit the width; the rest of the day (midnight to 6 AM by default) is a scroll away.
+        let hw = (width - 2 * lead) / CGFloat(CalendarLogic.visibleHours)
+        let content = 2 * lead + 24 * hw
         let lanes = max(agenda.placed.map(\.laneCount).max() ?? 1, 1)
         VStack(alignment: .leading, spacing: 0) {
             if !agenda.allDay.isEmpty { allDayBars.padding(.horizontal, width >= 1100 ? 28 : 20).padding(.bottom, 6) }
             GeometryReader { proxy in
                 // Lanes grow into the free height (34 pt minimum, 46 / 60 maximum); tall lanes add a second title line and the location.
                 let lh = min(max(((proxy.size.height - 34) / CGFloat(lanes)).rounded(.down) - 4, 34), width >= 900 ? 60 : 46)
-                ZStack(alignment: .topLeading) {
-                    grid(hw: hw)
-                    blocks(hw: hw, lh: lh, tall: lh >= 54)
-                    if isToday { nowMarker(hw: hw) }
+                ScrollView(.horizontal) {
+                    ZStack(alignment: .topLeading) {
+                        grid(hw: hw)
+                        blocks(hw: hw, lh: lh, tall: lh >= 54, content: content)
+                        if isToday { nowMarker(hw: hw) }
+                    }
+                    .frame(width: content, height: proxy.size.height, alignment: .topLeading)
+                }
+                .scrollIndicators(.never)
+                .scrollPosition($scroll)
+                .overlay {
                     if agenda.placed.isEmpty {
                         VStack(spacing: 3) {
                             Text(agenda.isEmpty ? "Nothing scheduled" : "No timed events")
@@ -296,29 +319,33 @@ private struct DayTimeline: View {
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .padding(.top, 22)
+                        .allowsHitTesting(false)
                     }
+                }
+                .onAppear {
+                    let minute = CalendarLogic.openingMinute(for: agenda, nowMinute: isToday ? nowMinute() : nil)
+                    scroll.scrollTo(x: CGFloat(minute) / 60 * hw)
                 }
             }
             .frame(maxHeight: .infinity)
-            if !agenda.early.isEmpty { earlyRow.padding(.horizontal, width >= 1100 ? 28 : 20).padding(.top, 6) }
         }
     }
 
     private func x(_ minute: Int, _ hw: CGFloat) -> CGFloat {
-        lead + CGFloat(minute - firstHour * 60) / 60 * hw
+        lead + CGFloat(minute) / 60 * hw
     }
 
     private func grid(hw: CGFloat) -> some View {
-        let nowX = isToday ? nowMinute().map { x($0, hw) } : nil
+        let nowX = isToday ? x(nowMinute(), hw) : nil
         return ZStack(alignment: .topLeading) {
-            ForEach(0...hours, id: \.self) { i in
-                let px = lead + CGFloat(i) * hw
+            ForEach(0...24, id: \.self) { hour in
+                let px = x(hour * 60, hw)
                 Rectangle().fill(.white.opacity(0.1)).frame(width: 0.5).padding(.top, 22).offset(x: px)
-                if width >= 1100, i < hours {
+                if width >= 1100, hour < 24 {
                     Rectangle().fill(.white.opacity(0.04)).frame(width: 0.5).padding(.top, 22).offset(x: px + hw / 2)
                 }
-                if width >= 900 || i % 2 == 0, nowX.map({ abs($0 - px) > 30 }) ?? true {
-                    Text(CalendarLogic.hourLabel(firstHour + i, hour24: hour24))
+                if width >= 900 || hour % 2 == 0, nowX.map({ abs($0 - px) > 30 }) ?? true {
+                    Text(CalendarLogic.hourLabel(hour, hour24: hour24))
                         .font(.system(size: 11, weight: .medium)).monospacedDigit()
                         .foregroundStyle(.white.opacity(0.38))
                         .fixedSize()
@@ -331,7 +358,7 @@ private struct DayTimeline: View {
         .allowsHitTesting(false)
     }
 
-    private func blocks(hw: CGFloat, lh: CGFloat, tall: Bool) -> some View {
+    private func blocks(hw: CGFloat, lh: CGFloat, tall: Bool, content: CGFloat) -> some View {
         let rows = max(agenda.placed.map(\.laneCount).max() ?? 1, 1)
         let now = Date()
         return ScrollView(.vertical) {
@@ -345,34 +372,30 @@ private struct DayTimeline: View {
                         .offset(x: left, y: CGFloat(placed.lane) * (lh + 4))
                 }
             }
-            .frame(width: width, height: CGFloat(rows) * (lh + 4) + 8, alignment: .topLeading)
+            .frame(width: content, height: CGFloat(rows) * (lh + 4) + 8, alignment: .topLeading)
             .padding(.top, 30)
         }
         .scrollIndicators(.never)
-        .padding(.top, 0)
     }
 
-    private func nowMinute() -> Int? {
-        let minutes = CalendarLogic.minuteOfDay(Date(), calendar: calendar)
-        return (firstHour * 60...CalendarLogic.lastHour * 60).contains(minutes) ? minutes : nil
+    private func nowMinute() -> Int {
+        CalendarLogic.minuteOfDay(Date(), calendar: calendar)
     }
 
     private func nowMarker(hw: CGFloat) -> some View {
         TimelineView(.periodic(from: .now, by: 30)) { _ in
-            if let minute = nowMinute() {
-                let px = x(minute, hw)
-                ZStack(alignment: .topLeading) {
-                    Rectangle().fill(Color.calendarRed).frame(width: 1.5).padding(.top, 0).offset(x: px - 0.75)
-                    Text(CalendarLogic.time(Date(), hour24: hour24))
-                        .font(.system(size: 10, weight: .semibold)).monospacedDigit()
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 6).frame(height: 16)
-                        .background(Capsule().fill(Color.calendarRed))
-                        .fixedSize()
-                        .position(x: px, y: 11)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            let px = x(nowMinute(), hw)
+            ZStack(alignment: .topLeading) {
+                Rectangle().fill(Color.calendarRed).frame(width: 1.5).offset(x: px - 0.75)
+                Text(CalendarLogic.time(Date(), hour24: hour24))
+                    .font(.system(size: 10, weight: .semibold)).monospacedDigit()
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 6).frame(height: 16)
+                    .background(Capsule().fill(Color.calendarRed))
+                    .fixedSize()
+                    .position(x: px, y: 11)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .allowsHitTesting(false)
     }
@@ -406,30 +429,6 @@ private struct DayTimeline: View {
         }
     }
 
-    private var earlyRow: some View {
-        HStack(spacing: 6) {
-            Text("BEFORE \(CalendarLogic.hourLabel(CalendarLogic.firstHour, hour24: hour24))")
-                .font(.system(size: 9.5, weight: .bold)).tracking(0.8).foregroundStyle(.white.opacity(0.38)).padding(.trailing, 2)
-            ForEach(agenda.early.prefix(2)) { event in
-                Button { select(event) } label: {
-                    HStack(spacing: 6) {
-                        Circle().fill(event.color.color).frame(width: 6, height: 6)
-                        // Hugs its title up to 260 pt (prototype max-width); `.frame(maxWidth:)` would stretch and centre it.
-                        CappedWidth(max: 260) { Text(event.title).lineLimit(1) }
-                    }
-                    .font(.system(size: 11.5, weight: .medium))
-                    .padding(.horizontal, 10).frame(height: 22)
-                    .background(Capsule().fill(.white.opacity(event.id == selectedID ? 0.14 : 0.06)))
-                }
-                .buttonStyle(PressStyle(scale: 0.96))
-            }
-            if agenda.early.count > 2 {
-                Text("+\(agenda.early.count - 2)").font(.system(size: 11)).foregroundStyle(.white.opacity(0.62))
-            }
-            Spacer(minLength: 0)
-        }
-        .frame(height: 22)
-    }
 }
 
 private struct EventBlock: View {
@@ -675,20 +674,6 @@ private struct MonthPicker: View {
 }
 
 // MARK: - Styles
-
-/// Its child's natural width, but never more than `max`: unlike `.frame(maxWidth:)`, it does not grow to fill the offer.
-private struct CappedWidth: Layout {
-    let max: CGFloat
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        guard let child = subviews.first else { return .zero }
-        return child.sizeThatFits(ProposedViewSize(width: min(proposal.width ?? .infinity, max), height: proposal.height))
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        subviews.first?.place(at: bounds.origin, proposal: ProposedViewSize(width: bounds.width, height: bounds.height))
-    }
-}
 
 private extension Color {
     /// Today and the Today button: Calendar's red (#FF453A), not the system accent, so today always reads as today.

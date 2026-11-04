@@ -5,6 +5,20 @@ import Observation
 /// Calendar page state: the selected day, the loaded events, and Calendar access.
 /// Events load for a fixed window around today (a year back, a year ahead) off the main thread, are indexed by day,
 /// and reload on `EKEventStoreChanged`. Every per-day read (ribbon dots, timeline) is a dictionary lookup.
+/// One ribbon cell's fixed content.
+struct RibbonDay: Identifiable, Equatable {
+    let date: Date
+    let number: String
+    let weekdayShort: String
+    let weekdayNarrow: String
+    /// "DEC" on the first of a month.
+    let monthChip: String?
+    let isWeekend: Bool
+    let spoken: String
+
+    var id: Date { date }
+}
+
 @Observable
 final class CalendarStore {
     static let shared = CalendarStore()
@@ -18,8 +32,9 @@ final class CalendarStore {
 
     private(set) var access: Access = .needed
     private(set) var calendar = Calendar.current
-    /// Every day the ribbon shows, oldest first. Built once per activation, not per render.
-    private(set) var days: [Date] = []
+    /// Every day the ribbon shows, oldest first, with its labels already formatted. Built once per activation,
+    /// so scrolling never formats a date.
+    private(set) var days: [RibbonDay] = []
     /// The day shown in the timeline. Always a start-of-day.
     var selectedDay: Date
     /// Bumped when something moves the selection; the ribbon scrolls the selected day to its centre.
@@ -40,8 +55,8 @@ final class CalendarStore {
     }
 
     var today: Date { calendar.startOfDay(for: Date()) }
-    var firstDay: Date { days.first ?? today }
-    var lastDay: Date { days.last ?? today }
+    var firstDay: Date { days.first?.date ?? today }
+    var lastDay: Date { days.last?.date ?? today }
 
     /// Call when the page appears: resets to today, then loads (asking for access the first time).
     func activate() {
@@ -141,8 +156,22 @@ final class CalendarStore {
         revision += 1
     }
 
-    private static func days(around today: Date, calendar: Calendar) -> [Date] {
-        (-windowDays...windowDays).compactMap { calendar.date(byAdding: .day, value: $0, to: today) }
+    private static func days(around today: Date, calendar: Calendar) -> [RibbonDay] {
+        let short = Date.FormatStyle().weekday(.abbreviated), narrow = Date.FormatStyle().weekday(.narrow)
+        let month = Date.FormatStyle().month(.abbreviated), spoken = Date.FormatStyle().weekday(.wide).day().month(.wide)
+        return (-windowDays...windowDays).compactMap { offset in
+            guard let date = calendar.date(byAdding: .day, value: offset, to: today) else { return nil }
+            let number = calendar.component(.day, from: date)
+            return RibbonDay(
+                date: date,
+                number: String(number),
+                weekdayShort: date.formatted(short).uppercased(),
+                weekdayNarrow: date.formatted(narrow).uppercased(),
+                monthChip: number == 1 ? date.formatted(month).uppercased() : nil,
+                isWeekend: calendar.isDateInWeekend(date),
+                spoken: date.formatted(spoken)
+            )
+        }
     }
 
     private func beginObserving() {

@@ -37,16 +37,21 @@ struct CalendarLogicTests {
         #expect(first.placed.first?.startMinute == 23 * 60 + 30)
         #expect(first.placed.first?.endMinute == 24 * 60)
         let second = CalendarLogic.agenda([race], on: date(11, 7), calendar: calendar)
-        #expect(second.early.map(\.id) == ["race"]) // ends 12:30 AM, before the 6 AM timeline start
+        #expect(second.placed.first?.startMinute == 0)
+        #expect(second.placed.first?.endMinute == 30)
         #expect(CalendarLogic.rangeLabel(race, on: date(11, 6), calendar: calendar, hour24: true).hasPrefix("Starts"))
         #expect(CalendarLogic.rangeLabel(race, on: date(11, 7), calendar: calendar, hour24: true).hasPrefix("Ends"))
     }
 
-    @Test func eventStraddlingSixAMStaysOnTheTimelineClampedToSix() {
-        let night = event("night", date(11, 4, 4), date(11, 4, 8))
-        let agenda = CalendarLogic.agenda([night], on: date(11, 4), calendar: calendar)
-        #expect(agenda.early.isEmpty)
-        #expect(agenda.placed.first?.startMinute == 6 * 60)
+    @Test func timelineOpensAtSixUnlessSomethingEarlierNeedsShowing() {
+        let late = CalendarLogic.agenda([event("late", date(11, 4, 9), date(11, 4, 10))], on: date(11, 4), calendar: calendar)
+        #expect(CalendarLogic.openingMinute(for: late, nowMinute: nil) == 6 * 60)
+        let early = CalendarLogic.agenda([event("race", date(11, 4, 2), date(11, 4, 3))], on: date(11, 4), calendar: calendar)
+        #expect(CalendarLogic.openingMinute(for: early, nowMinute: nil) == 90)
+        #expect(CalendarLogic.openingMinute(for: late, nowMinute: 3 * 60) == 2 * 60)
+        #expect(CalendarLogic.openingMinute(for: early, nowMinute: 0) == 0)
+        // Late evening with a 2 AM event: now stays in view rather than the early event.
+        #expect(CalendarLogic.openingMinute(for: early, nowMinute: 21 * 60 + 13) == 4 * 60 + 13)
     }
 
     @Test func multiDayAllDayEventCoversEachDayButNotTheExclusiveEnd() {
@@ -114,7 +119,7 @@ struct CalendarStoreIndexTests {
             event("offsite", date(17), date(20), allDay: true),
         ])
         #expect(store.agenda(on: date(6)).placed.map(\.id) == ["race"])
-        #expect(store.agenda(on: date(7)).early.map(\.id) == ["race"])
+        #expect(store.agenda(on: date(7)).placed.map(\.id) == ["race"])
         #expect(store.agenda(on: date(19)).allDay.map(\.id) == ["offsite"])
         #expect(store.agenda(on: date(20)).isEmpty)
         #expect(store.dots(on: date(18)).count == 1)

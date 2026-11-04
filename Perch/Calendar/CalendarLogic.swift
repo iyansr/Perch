@@ -42,18 +42,17 @@ nonisolated struct PlacedEvent: Identifiable, Equatable {
 /// What the Calendar page shows for one day.
 nonisolated struct DayAgenda: Equatable {
     var allDay: [CalendarEvent] = []
-    /// Events that end before the timeline's first hour; listed beside it instead of dropped.
-    var early: [CalendarEvent] = []
     var placed: [PlacedEvent] = []
 
-    var isEmpty: Bool { allDay.isEmpty && early.isEmpty && placed.isEmpty }
-    var count: Int { allDay.count + early.count + placed.count }
+    var isEmpty: Bool { allDay.isEmpty && placed.isEmpty }
+    var count: Int { allDay.count + placed.count }
 }
 
 nonisolated enum CalendarLogic {
-    /// The timeline starts here; anything that ends earlier is "early".
-    static let firstHour = 6
-    static let lastHour = 24
+    /// The timeline spans the whole day but shows this many hours at once, scrolling for the rest.
+    static let visibleHours = 18
+    /// Where the timeline opens when nothing earlier needs showing.
+    static let openingHour = 6
 
     /// Events overlapping `day`, all-day first, then by start. Overnight and multi-day events appear on every day they touch.
     static func events(_ events: [CalendarEvent], on day: Date, calendar: Calendar) -> [CalendarEvent] {
@@ -67,7 +66,7 @@ nonisolated enum CalendarLogic {
             }
     }
 
-    /// Splits a day into all-day bars, the early group and lane-packed timeline blocks.
+    /// Splits a day into all-day bars and lane-packed timeline blocks.
     static func agenda(_ events: [CalendarEvent], on day: Date, calendar: Calendar) -> DayAgenda {
         let start = calendar.startOfDay(for: day)
         let dayEnd = calendar.date(byAdding: .day, value: 1, to: start) ?? start
@@ -81,13 +80,8 @@ nonisolated enum CalendarLogic {
             }
             let from = event.start <= start ? 0 : minuteOfDay(event.start, calendar: calendar)
             let to = event.end >= dayEnd ? 24 * 60 : minuteOfDay(event.end, calendar: calendar)
-            if to <= firstHour * 60 {
-                agenda.early.append(event)
-            } else {
-                // A zero-length event still gets a visible sliver.
-                let clampedStart = max(from, firstHour * 60)
-                timed.append((event, clampedStart, max(to, clampedStart + 15)))
-            }
+            // A zero-length event still gets a visible sliver.
+            timed.append((event, from, max(to, from + 15)))
         }
         agenda.placed = packLanes(timed)
         return agenda
@@ -194,7 +188,7 @@ nonisolated enum CalendarLogic {
     /// The event the detail strip shows by default. Today: the first timed event not yet over, else nothing once
     /// everything has finished (an all-day event only on a day without timed ones). Other days: the first timed event.
     static func defaultSelection(in agenda: DayAgenda, isToday: Bool, now: Date) -> CalendarEvent? {
-        let timed = (agenda.early + agenda.placed.map(\.event)).sorted { $0.start < $1.start }
+        let timed = agenda.placed.map(\.event).sorted { $0.start < $1.start }
         if isToday { return timed.first { $0.end > now } ?? (timed.isEmpty ? agenda.allDay.first : nil) }
         return timed.first ?? agenda.allDay.first
     }
@@ -202,5 +196,19 @@ nonisolated enum CalendarLogic {
     /// Moves by `months`, clamping the day so 31 January + 1 month is 28 February.
     static func addingMonths(_ months: Int, to date: Date, calendar: Calendar) -> Date {
         calendar.date(byAdding: .month, value: months, to: date) ?? date
+    }
+}
+
+extension CalendarLogic {
+    /// The minute the timeline scrolls to on open: 6 AM, or earlier so the first event is in view.
+    /// On today the now marker wins: the view never opens with now off either edge.
+    static func openingMinute(for agenda: DayAgenda, nowMinute: Int?) -> Int {
+        var minute = openingHour * 60
+        if let first = agenda.placed.map(\.startMinute).min() { minute = min(minute, first - 30) }
+        if let nowMinute {
+            minute = min(minute, nowMinute - 60)
+            minute = max(minute, nowMinute - (visibleHours - 1) * 60)
+        }
+        return min(max(minute, 0), (24 - visibleHours) * 60)
     }
 }
