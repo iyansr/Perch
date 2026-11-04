@@ -62,7 +62,9 @@ final class CalendarStore {
     func activate() {
         calendar = Calendar.current
         days = Self.days(around: today, calendar: calendar)
-        select(today, scroll: true)
+        // No scroll request: the ribbon places itself on the selected day before it is shown. A request here
+        // animated the strip from its leading edge, a year back, across to today.
+        select(today)
         switch EKEventStore.authorizationStatus(for: .event) {
         case .fullAccess:
             access = .granted
@@ -93,7 +95,7 @@ final class CalendarStore {
 
     func select(_ day: Date, scroll: Bool = false) {
         let clamped = min(max(calendar.startOfDay(for: day), firstDay), lastDay)
-        guard clamped != selectedDay || scroll else { return }
+        guard clamped != selectedDay || scroll else { return } 
         selectedDay = clamped
         if scroll { scrollRequest += 1 }
     }

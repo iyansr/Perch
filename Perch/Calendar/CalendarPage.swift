@@ -152,6 +152,8 @@ private struct DayRibbon: View {
     @Binding var shownMonth: Date?
     let cell: CGFloat
     let width: CGFloat
+    /// Hidden until the strip sits on the selected day, so opening never shows it travelling there.
+    @State private var isPlaced = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -189,10 +191,18 @@ private struct DayRibbon: View {
                 shownMonth = month
             }
             .onChange(of: store.scrollRequest) {
-                withAnimation(reduceMotion ? nil : .smooth(duration: 0.3)) { proxy.scrollTo(store.selectedDay, anchor: .center) }
+                withAnimation(reduceMotion || !isPlaced ? nil : .smooth(duration: 0.3)) { proxy.scrollTo(store.selectedDay, anchor: .center) }
             }
-            .onAppear { proxy.scrollTo(store.selectedDay, anchor: .center) }
+            .task {
+                // The lazy strip has not laid out its cells on the first pass, so place it, let it lay out, and
+                // place it again (now exact) before revealing it.
+                proxy.scrollTo(store.selectedDay, anchor: .center)
+                await Task.yield()
+                proxy.scrollTo(store.selectedDay, anchor: .center)
+                isPlaced = true
+            }
         }
+        .opacity(isPlaced ? 1 : 0)
         // Edge fades drawn over the black surface, not `.mask`: a mask re-renders the scrolling strip offscreen every frame.
         .overlay(alignment: .leading) {
             LinearGradient(colors: [.black, .black.opacity(0)], startPoint: .leading, endPoint: .trailing)
