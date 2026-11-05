@@ -154,6 +154,8 @@ private struct DayRibbon: View {
     let width: CGFloat
     /// Hidden until the strip sits on the selected day, so opening never shows it travelling there.
     @State private var isPlaced = false
+    @State private var position = ScrollPosition(idType: Date.self)
+    @State private var drag = DragScrollState()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -164,43 +166,47 @@ private struct DayRibbon: View {
         let today = store.today
         let selected = store.selectedDay
         let wide = width >= 600
-        // No scroll state is written while scrolling: a ScrollViewReader scrolls on request, and the month title
-        // follows a geometry reading that only changes when the centred month does. Writing the centred day to state
-        // (`scrollPosition(id:)`) re-ran this body for every day passing the centre.
-        ScrollViewReader { proxy in
-            ScrollView(.horizontal) {
+        // The month title follows the visible cells and changes only when the centred month does; nothing else
+        // about the scroll position is read into the view, so scrolling does not re-run this body.
+        ScrollView(.horizontal) {
                 LazyHStack(spacing: 0) {
                     Color.clear.frame(width: margin, height: 1)
                     ForEach(days) { day in
                         DayCell(day: day, isToday: day.date == today, isSelected: day.date == selected,
-                                dots: store.dots(on: day.date), width: cell, wide: wide) { store.select(day.date, scroll: true) }
+                                dots: store.dots(on: day.date), width: cell, wide: wide) {
+                            // The release that ends a mouse drag is not a click on the day under the pointer.
+                            guard !drag.isActive else { return }
+                            store.select(day.date, scroll: true)
+                        }
                             .equatable()
                             .id(day.date)
                     }
                     Color.clear.frame(width: margin, height: 1)
                 }
                 .scrollTargetLayout()
-            }
-            .scrollIndicators(.never)
-            .scrollTargetBehavior(.viewAligned)
-            // The visible cells, not the offset: a lazy stack only estimates its width, so offset / cell drifts by weeks.
-            .onScrollTargetVisibilityChange(idType: Date.self, threshold: 0.5) { visible in
-                guard !visible.isEmpty,
-                      let month = store.calendar.dateInterval(of: .month, for: visible[visible.count / 2])?.start,
-                      month != shownMonth else { return }
-                shownMonth = month
-            }
-            .onChange(of: store.scrollRequest) {
-                withAnimation(reduceMotion || !isPlaced ? nil : .smooth(duration: 0.3)) { proxy.scrollTo(store.selectedDay, anchor: .center) }
-            }
-            .task {
-                // The lazy strip has not laid out its cells on the first pass, so place it, let it lay out, and
-                // place it again (now exact) before revealing it.
-                proxy.scrollTo(store.selectedDay, anchor: .center)
-                await Task.yield()
-                proxy.scrollTo(store.selectedDay, anchor: .center)
-                isPlaced = true
-            }
+                .dragScrollContent(drag)
+        }
+        .scrollIndicators(.never)
+        .scrollTargetBehavior(.viewAligned)
+        .scrollPosition($position)
+        .dragToScroll(drag)
+        // The visible cells, not the offset: a lazy stack only estimates its width, so offset / cell drifts by weeks.
+        .onScrollTargetVisibilityChange(idType: Date.self, threshold: 0.5) { visible in
+            guard !visible.isEmpty,
+                  let month = store.calendar.dateInterval(of: .month, for: visible[visible.count / 2])?.start,
+                  month != shownMonth else { return }
+            shownMonth = month
+        }
+        .onChange(of: store.scrollRequest) {
+            withAnimation(reduceMotion || !isPlaced ? nil : .smooth(duration: 0.3)) { position.scrollTo(id: store.selectedDay, anchor: .center) }
+        }
+        .task {
+            // The lazy strip has not laid out its cells on the first pass, so place it, let it lay out, and
+            // place it again (now exact) before revealing it.
+            position.scrollTo(id: store.selectedDay, anchor: .center)
+            await Task.yield()
+            position.scrollTo(id: store.selectedDay, anchor: .center)
+            isPlaced = true
         }
         .opacity(isPlaced ? 1 : 0)
         // Edge fades drawn over the black surface, not `.mask`: a mask re-renders the scrolling strip offscreen every frame.
@@ -298,6 +304,7 @@ private struct DayTimeline: View {
     private let lead: CGFloat = 24
     /// Recreated per day (the page keys this view by date), so each day opens at its own `openingMinute`.
     @State private var scroll = ScrollPosition(edge: .leading)
+    @State private var drag = DragScrollState()
 
     var body: some View {
         // 18 hours fit the width; the rest of the day (midnight to 6 AM by default) is a scroll away.
@@ -309,16 +316,21 @@ private struct DayTimeline: View {
             GeometryReader { proxy in
                 // Lanes grow into the free height (34 pt minimum, 46 / 60 maximum); tall lanes add a second title line and the location.
                 let lh = min(max(((proxy.size.height - 34) / CGFloat(lanes)).rounded(.down) - 4, 34), width >= 900 ? 60 : 46)
-                ScrollView(.horizontal) {
+                // One scroll view, vertical only when lanes overflow: a nested vertical scroll view took
+                // shift + mouse wheel for itself, so the timeline never scrolled sideways with a mouse.
+                let lanesHeight = 30 + CGFloat(lanes) * (lh + 4) + 8
+                ScrollView(lanesHeight > proxy.size.height ? [.horizontal, .vertical] : .horizontal) {
                     ZStack(alignment: .topLeading) {
                         grid(hw: hw)
-                        blocks(hw: hw, lh: lh, tall: lh >= 54, content: content)
+                        blocks(hw: hw, lh: lh, tall: lh >= 54)
                         if isToday { nowMarker(hw: hw) }
                     }
-                    .frame(width: content, height: proxy.size.height, alignment: .topLeading)
+                    .frame(width: content, height: max(proxy.size.height, lanesHeight), alignment: .topLeading)
+                    .dragScrollContent(drag)
                 }
                 .scrollIndicators(.never)
                 .scrollPosition($scroll)
+                .dragToScroll(drag)
                 .overlay {
                     if agenda.placed.isEmpty {
                         VStack(spacing: 3) {
@@ -368,24 +380,22 @@ private struct DayTimeline: View {
         .allowsHitTesting(false)
     }
 
-    private func blocks(hw: CGFloat, lh: CGFloat, tall: Bool, content: CGFloat) -> some View {
-        let rows = max(agenda.placed.map(\.laneCount).max() ?? 1, 1)
+    private func blocks(hw: CGFloat, lh: CGFloat, tall: Bool) -> some View {
         let now = Date()
-        return ScrollView(.vertical) {
-            ZStack(alignment: .topLeading) {
-                ForEach(agenda.placed) { placed in
-                    let left = x(placed.startMinute, hw)
-                    let w = max(CGFloat(placed.endMinute - placed.startMinute) / 60 * hw - 2, 6)
-                    EventBlock(placed: placed, width: w, isSelected: placed.id == selectedID, isPast: isToday && placed.event.end <= now,
-                               large: width >= 900, tall: tall, day: day, calendar: calendar, hour24: hour24) { select(placed.event) }
-                        .frame(width: w, height: lh)
-                        .offset(x: left, y: CGFloat(placed.lane) * (lh + 4))
+        return ZStack(alignment: .topLeading) {
+            ForEach(agenda.placed) { placed in
+                let left = x(placed.startMinute, hw)
+                let w = max(CGFloat(placed.endMinute - placed.startMinute) / 60 * hw - 2, 6)
+                EventBlock(placed: placed, width: w, isSelected: placed.id == selectedID, isPast: isToday && placed.event.end <= now,
+                           large: width >= 900, tall: tall, day: day, calendar: calendar, hour24: hour24) {
+                    guard !drag.isActive else { return }
+                    select(placed.event)
                 }
+                .frame(width: w, height: lh)
+                .offset(x: left, y: 30 + CGFloat(placed.lane) * (lh + 4))
             }
-            .frame(width: content, height: CGFloat(rows) * (lh + 4) + 8, alignment: .topLeading)
-            .padding(.top, 30)
         }
-        .scrollIndicators(.never)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private func nowMinute() -> Int {
@@ -680,6 +690,116 @@ private struct MonthPicker: View {
         .disabled(!inRange)
         .opacity(inRange ? 1 : 0.35)
         .accessibilityLabel(first.formatted(.dateTime.month(.wide).year()))
+    }
+}
+
+// MARK: - Drag to scroll
+
+/// Mouse-drag state for one horizontal scroll view. The drag moves the scroll view's clip view directly, as native
+/// scrolling does; going through `ScrollPosition` re-ran the whole strip's body on every mouse move.
+private final class DragScrollState {
+    weak var scrollView: NSScrollView?
+    var start: CGFloat?
+    /// Recent pointer samples (time, x) for the release velocity. SwiftUI's own `velocity` keeps the last
+    /// movement's speed after the pointer stops, so a drag released at rest would still fling.
+    var samples: [(time: TimeInterval, x: CGFloat)] = []
+    /// True from the first move of a drag until just after its release, so the button under the pointer
+    /// does not treat that release as a click.
+    var isActive = false
+
+    var offset: CGFloat { scrollView?.contentView.bounds.origin.x ?? 0 }
+
+    /// Points per second over the last 80 ms before `now`; zero when the pointer was resting.
+    func velocity(at now: TimeInterval) -> CGFloat {
+        let recent = samples.filter { now - $0.time <= 0.08 }
+        guard let first = recent.first, let last = recent.last, last.time > first.time else { return 0 }
+        return (last.x - first.x) / CGFloat(last.time - first.time)
+    }
+
+    func scroll(to x: CGFloat, animated: Bool) {
+        guard let scrollView, let document = scrollView.documentView else { return }
+        let clip = scrollView.contentView
+        let maxX = max(0, document.frame.width - clip.bounds.width)
+        let target = NSPoint(x: min(max(0, x), maxX), y: clip.bounds.origin.y)
+        if animated {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.45
+                context.timingFunction = CAMediaTimingFunction(controlPoints: 0.23, 1, 0.32, 1) // strong ease-out
+                clip.animator().setBoundsOrigin(target)
+            }
+        } else {
+            clip.scroll(to: target)
+            scrollView.reflectScrolledClipView(clip)
+        }
+    }
+}
+
+/// Finds the AppKit scroll view a SwiftUI `ScrollView` is built on, from inside its content.
+private struct EnclosingScrollView: NSViewRepresentable {
+    let state: DragScrollState
+
+    func makeNSView(context: Context) -> FinderView {
+        let view = FinderView()
+        view.state = state
+        return view
+    }
+
+    func updateNSView(_ view: FinderView, context: Context) {
+        view.state = state
+        view.capture()
+    }
+
+    final class FinderView: NSView {
+        weak var state: DragScrollState?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            capture()
+        }
+
+        override func layout() {
+            super.layout()
+            capture()
+        }
+
+        func capture() {
+            guard let state, let scrollView = enclosingScrollView, state.scrollView !== scrollView else { return }
+            state.scrollView = scrollView
+        }
+    }
+}
+
+private extension View {
+    /// Marks this view as the content of the scroll view `state` drags.
+    func dragScrollContent(_ state: DragScrollState) -> some View {
+        background(EnclosingScrollView(state: state))
+    }
+
+    /// Click-and-drag scrolls a horizontal scroll view, and a flick carries on (projected with UIKit's
+    /// deceleration rate). Trackpads keep their native scrolling.
+    func dragToScroll(_ state: DragScrollState) -> some View {
+        simultaneousGesture(
+            DragGesture(minimumDistance: 4)
+                .onChanged { value in
+                    if state.start == nil {
+                        state.start = state.offset
+                        state.isActive = true
+                        state.samples.removeAll()
+                    }
+                    state.samples.append((ProcessInfo.processInfo.systemUptime, value.translation.width))
+                    if state.samples.count > 12 { state.samples.removeFirst() }
+                    state.scroll(to: (state.start ?? 0) - value.translation.width, animated: false)
+                }
+                .onEnded { _ in
+                    state.start = nil
+                    let decelerationRate = 0.998
+                    let velocity = state.velocity(at: ProcessInfo.processInfo.systemUptime)
+                    let projection = velocity / 1000 * decelerationRate / (1 - decelerationRate)
+                    if abs(projection) > 1 { state.scroll(to: state.offset - projection, animated: true) }
+                    // The release's button action runs in this same event; clear the flag after it.
+                    DispatchQueue.main.async { state.isActive = false }
+                }
+        )
     }
 }
 
